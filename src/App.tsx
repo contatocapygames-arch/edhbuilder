@@ -3,6 +3,7 @@ import { DeckInputForm, type DeckInputValues } from "./components/DeckInputForm"
 import { StatTiles } from "./components/StatTiles";
 import { CardTable } from "./components/CardTable";
 import { ResultsDashboard } from "./components/ResultsDashboard";
+import { EfficiencyPanel } from "./components/EfficiencyPanel";
 import { ComboBuilder } from "./components/ComboBuilder";
 import { parseDecklist, totalCardCount } from "./lib/deckParser";
 import { fetchCardsByName } from "./lib/scryfall";
@@ -24,6 +25,7 @@ function App() {
   const [cards, setCards] = useState<ClassifiedCard[] | null>(null);
   const [stats, setStats] = useState<DeckStats | null>(null);
   const [onPlay, setOnPlay] = useState(true);
+  const [maxTurn, setMaxTurn] = useState(12);
   const [sizeWarning, setSizeWarning] = useState<string | null>(null);
 
   async function handleAnalyze(values: DeckInputValues) {
@@ -76,6 +78,7 @@ function App() {
       setCards(classified);
       setStats(computed);
       setOnPlay(values.onPlay);
+      setMaxTurn(values.maxTurn);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setCards(null);
@@ -112,6 +115,7 @@ function App() {
             <StatTiles stats={stats} />
           </div>
           <ResultsDashboard stats={stats} onPlay={onPlay} />
+          <EfficiencyPanel stats={stats} onPlay={onPlay} maxTurn={maxTurn} />
           <ComboBuilder
             cards={cards}
             librarySize={stats.librarySize}
@@ -119,7 +123,7 @@ function App() {
             onPlay={onPlay}
           />
           <div className="card">
-            <h2>5. Todas as cartas classificadas</h2>
+            <h2>6. Todas as cartas classificadas</h2>
             <CardTable cards={cards} />
           </div>
         </>

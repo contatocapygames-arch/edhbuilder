@@ -105,6 +105,34 @@ pode falhar por CORS, principalmente no Moxfield (protegido por
 anti-bot/Cloudflare) — quando falha, a mensagem de erro orienta a exportar a
 lista como texto por lá e colar na aba "Colar lista".
 
+### 5. Eficiência e consistência geral (`src/lib/mulligan.ts`, `src/lib/goldfish.ts`)
+
+Além dos combos, o app tem uma seção "Eficiência e consistência do deck" com
+métricas mais gerais:
+
+- **Mana flood x mana screw**: extensão direta da hipergeométrica exata —
+  `screw` é a probabilidade de ter perdido a curva de terrenos (inverso da
+  seção de consistência de mana); `flood` é a probabilidade de já ter
+  comprado 3+ terrenos além do que o turno pede.
+- **Qualidade da mão inicial (mulligan)**: simulação Monte Carlo da regra de
+  Londres (compra 7, mantém se os terrenos caírem numa faixa configurável,
+  senão compra de novo até 3 vezes, descendo cartas ao manter). Não existe
+  fórmula fechada simples aqui porque a decisão de manter depende de uma
+  faixa (não um valor único) e o "bottom" pós-mulligan é uma escolha do
+  jogador — por isso é simulado, com a simplificação (documentada no código)
+  de que o bottom prioriza aproximar a mão da faixa aceitável.
+- **Simulação "goldfish"**: Monte Carlo jogando sozinho (compra, desce
+  terreno, conjura o feitiço mais caro que couber, 1 por turno) para medir a
+  chance de ter alguma jogada legal em cada turno e a mana média
+  desperdiçada — um proxy de eficiência da curva completa, que a
+  hipergeométrica isolada não captura porque depende da curva inteira, não
+  de um único grupo de cartas.
+- **Score de consistência (0–100)**: heurística de apoio que combina, com
+  pesos declarados na própria tela, terrenos dentro da faixa de Karsten,
+  fontes de cor no turno 3 e densidade de rampa/compra/remoção. É só um
+  resumo — as probabilidades exatas em cada seção continuam sendo a fonte de
+  verdade.
+
 ## Usando o app
 
 1. Cole a lista do deck (formatos `1 Nome`, `1x Nome` ou apenas `Nome` por

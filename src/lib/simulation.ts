@@ -53,29 +53,13 @@ export interface SimResult {
   trials: number;
 }
 
+import { createRng, shuffle } from "./rng";
+
 type Token =
   | { kind: "piece"; pieceId: string }
   | { kind: "tutor"; tutorId: string }
   | { kind: "land" }
   | { kind: "other" };
-
-function mulberry32(seed: number) {
-  let a = seed >>> 0;
-  return function rng() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function shuffle<T>(arr: T[], rng: () => number): void {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-}
 
 function buildDeck(config: SimConfig): Token[] {
   const deck: Token[] = [];
@@ -190,7 +174,7 @@ export function runComboSimulation(config: SimConfig): SimResult {
     };
   }
 
-  const rng = config.seed !== undefined ? mulberry32(config.seed) : Math.random;
+  const rng = createRng(config.seed);
   const completions: (number | null)[] = new Array(config.trials);
   for (let i = 0; i < config.trials; i++) {
     completions[i] = runSingleTrial(config, rng);
