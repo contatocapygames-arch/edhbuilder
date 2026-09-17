@@ -121,7 +121,7 @@ export function ComboBuilder({
 
   return (
     <div className="card">
-      <h2>4. Probabilidade do combo (considerando tutores)</h2>
+      <h2>5. Probabilidade do combo (considerando tutores)</h2>
       <p className="muted">
         Defina os "slots" do seu combo (cada slot pode ter várias cartas redundantes — qualquer
         uma delas conta) e marque quais tutores podem buscar quais slots. O cálculo usa simulação

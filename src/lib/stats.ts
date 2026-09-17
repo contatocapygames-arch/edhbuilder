@@ -2,9 +2,13 @@ import { ALL_COLORS, type ClassifiedCard, type ManaColor } from "./classify";
 import {
   cardsSeenByTurn,
   colorSourceProbability,
+  hypergeomAtLeast,
   karstenLandBandForCommander,
   landDropProbability,
 } from "./probability";
+
+/** Quantos terrenos "a mais do que o turno" definem uma mão/board flodada. */
+const FLOOD_EXCESS = 3;
 
 export interface CurveBucket {
   cmc: number; // 6 representa "6+"
@@ -36,7 +40,23 @@ export interface DeckStats {
   colorStats: ColorStat[];
   karstenBand: { min: number; max: number; note: string };
   landDropByTurn: TurnPoint[];
+  /** probabilidade de já estar "afogado" em terrenos (ver FLOOD_EXCESS) em cada turno. */
+  floodProbabilityByTurn: TurnPoint[];
+  /** probabilidade de ter perdido a curva de terrenos (o inverso de landDropByTurn). */
+  screwProbabilityByTurn: TurnPoint[];
   colorProbabilityByTurn: Record<ManaColor, TurnPoint[]>;
+  consistencyScore: ConsistencyScore;
+}
+
+export interface ConsistencyScoreItem {
+  label: string;
+  score: number; // 0-100
+  weight: number; // soma dos pesos = 1
+}
+
+export interface ConsistencyScore {
+  overall: number; // 0-100
+  breakdown: ConsistencyScoreItem[];
 }
 
 export interface StatsOptions {
@@ -96,6 +116,20 @@ export function computeDeckStats(
     return { turn, probability: landDropProbability(librarySize, landCount, turn, opts.onPlay) };
   });
 
+  const floodProbabilityByTurn: TurnPoint[] = Array.from({ length: opts.maxTurn }, (_, i) => {
+    const turn = i + 1;
+    const seen = cardsSeenByTurn(turn, opts.onPlay);
+    return {
+      turn,
+      probability: hypergeomAtLeast(librarySize, landCount, seen, turn + FLOOD_EXCESS),
+    };
+  });
+
+  const screwProbabilityByTurn: TurnPoint[] = landDropByTurn.map((p) => ({
+    turn: p.turn,
+    probability: 1 - p.probability,
+  }));
+
   const colorProbabilityByTurn: Record<ManaColor, TurnPoint[]> = {} as Record<
     ManaColor,
     TurnPoint[]
@@ -115,6 +149,18 @@ export function computeDeckStats(
     });
   }
 
+  const karstenBand = karstenLandBandForCommander(averageCMC);
+  const consistencyScore = computeConsistencyScore({
+    landCount,
+    karstenBand,
+    colorStats,
+    colorProbabilityByTurn,
+    rampCount,
+    drawCount,
+    removalCount,
+    nonlandCount,
+  });
+
   return {
     librarySize,
     totalCards,
@@ -127,10 +173,69 @@ export function computeDeckStats(
     averageCMC,
     curve,
     colorStats,
-    karstenBand: karstenLandBandForCommander(averageCMC),
+    karstenBand,
     landDropByTurn,
+    floodProbabilityByTurn,
+    screwProbabilityByTurn,
     colorProbabilityByTurn,
+    consistencyScore,
   };
+}
+
+/** Penaliza linearmente por carta fora da faixa [min,max], até chegar a 0. */
+function bandScore(value: number, min: number, max: number, penaltyPerUnit: number): number {
+  if (value >= min && value <= max) return 100;
+  const distance = value < min ? min - value : value - max;
+  return Math.max(0, 100 - distance * penaltyPerUnit);
+}
+
+interface ConsistencyInputs {
+  landCount: number;
+  karstenBand: { min: number; max: number };
+  colorStats: ColorStat[];
+  colorProbabilityByTurn: Record<ManaColor, TurnPoint[]>;
+  rampCount: number;
+  drawCount: number;
+  removalCount: number;
+  nonlandCount: number;
+}
+
+/**
+ * Score de consistência 0-100, agregando três sinais com pesos declarados.
+ * É uma heurística de apoio (como a faixa de terrenos de Karsten) — as
+ * probabilidades exatas em cada seção do app são a fonte de verdade; este
+ * número só resume tudo num único indicador para comparar decks.
+ */
+function computeConsistencyScore(inputs: ConsistencyInputs): ConsistencyScore {
+  const landScore = bandScore(inputs.landCount, inputs.karstenBand.min, inputs.karstenBand.max, 8);
+
+  const activeColors = inputs.colorStats.filter((c) => c.sources > 0 && c.pips > 0);
+  const referenceTurn = 3;
+  const colorScore =
+    activeColors.length > 0
+      ? (100 *
+          activeColors.reduce((sum, c) => {
+            const points = inputs.colorProbabilityByTurn[c.color];
+            const point = points.find((p) => p.turn === referenceTurn) ?? points.at(-1);
+            return sum + (point?.probability ?? 0);
+          }, 0)) /
+        activeColors.length
+      : 100;
+
+  const actionDensity =
+    inputs.nonlandCount > 0
+      ? (inputs.rampCount + inputs.drawCount + inputs.removalCount) / inputs.nonlandCount
+      : 0;
+  const actionScore = bandScore(actionDensity, 0.3, 0.55, 200);
+
+  const breakdown: ConsistencyScoreItem[] = [
+    { label: "Terrenos dentro da faixa recomendada", score: landScore, weight: 0.4 },
+    { label: `Fontes de cor (turno ${referenceTurn})`, score: colorScore, weight: 0.35 },
+    { label: "Densidade de rampa/compra/remoção", score: actionScore, weight: 0.25 },
+  ];
+  const overall = breakdown.reduce((sum, b) => sum + b.score * b.weight, 0);
+
+  return { overall, breakdown };
 }
 
 export { cardsSeenByTurn };
