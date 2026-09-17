@@ -93,11 +93,24 @@ converge para o valor hipergeométrico exato quando não há tutores, que um
 tutor dedicado aumenta a probabilidade do combo, e que um tutor wildcard não
 "resolve" duas peças ao mesmo tempo.
 
+### 4. Importar direto de um link (`src/lib/deckImport.ts`)
+
+Além de colar a lista, dá para colar o link público de um deck do
+**Moxfield** (`moxfield.com/decks/...`) ou do **Archidekt**
+(`archidekt.com/decks/...`). Nenhum dos dois tem API oficial para terceiros,
+mas ambos expõem — no próprio domínio, sem autenticação — o endpoint JSON que
+o site usa para renderizar a página do deck; o app busca exatamente esse
+endpoint direto do navegador (sem raspar HTML, sem proxy de terceiros). Isso
+pode falhar por CORS, principalmente no Moxfield (protegido por
+anti-bot/Cloudflare) — quando falha, a mensagem de erro orienta a exportar a
+lista como texto por lá e colar na aba "Colar lista".
+
 ## Usando o app
 
 1. Cole a lista do deck (formatos `1 Nome`, `1x Nome` ou apenas `Nome` por
    linha; uma seção/linha "Commander" marca o(s) comandante(s), que saem da
-   biblioteca para o cálculo de probabilidades).
+   biblioteca para o cálculo de probabilidades) — ou use a aba "Importar
+   link" para trazer automaticamente de um deck público do Moxfield/Archidekt.
 2. Escolha o formato/tamanho do baralho, se joga primeiro e quantos turnos
    analisar.
 3. Depois de analisado: veja a curva de mana, a chance de estar "on curve"
