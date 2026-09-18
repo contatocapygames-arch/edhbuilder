@@ -280,4 +280,55 @@ describe("runGoalPlanSimulation", () => {
     expect(landResult.overallProbability).toBe(0);
     expect(manaResult.overallProbability).toBeGreaterThan(0);
   });
+
+  it("ritual mana (e.g. Dark Ritual) counts the turn it's cast but does NOT persist to later turns", () => {
+    const deckSize = 40;
+    const base = {
+      deckSize,
+      lands: landsOf(16, ["C"]),
+      onPlay: true,
+      categoryCards: {
+        ...emptyCategories,
+        ramp: [
+          {
+            requirement: { cmc: 1, pips: {} },
+            copies: 4,
+            manaProduced: 3,
+            manaDuration: "oneShot" as const,
+          }, // "Dark Ritual"
+        ],
+      },
+      trials: 15000,
+      seed: 10,
+    };
+    // Turno 1 on the play: só 1 terreno jogado. "4 mana no turno 1" só é
+    // possível se um ritual (+3) for conjurado no MESMO turno 1.
+    const turn1 = runGoalPlanSimulation({
+      ...base,
+      milestones: [{ id: "m1", kind: "manaAvailable", turn: 1, minMana: 4 }],
+    });
+    expect(turn1.overallProbability).toBeGreaterThan(0);
+
+    // Turno 2: se o ritual fosse tratado como permanente, sua mana +3
+    // continuaria contando e "4 mana no turno 2" (2 terrenos + resquício do
+    // ritual) ficaria bem mais fácil do que só com terrenos. Comparando
+    // contra uma rampa PERMANENTE equivalente (mesmo manaProduced, sem
+    // manaDuration) prova que o ritual não deixa resíduo no turno seguinte.
+    const oneShotTurn2 = runGoalPlanSimulation({
+      ...base,
+      milestones: [{ id: "m1", kind: "manaAvailable", turn: 2, minMana: 4 }],
+    });
+    const permanentBase = {
+      ...base,
+      categoryCards: {
+        ...emptyCategories,
+        ramp: [{ requirement: { cmc: 1, pips: {} }, copies: 4, manaProduced: 3 }], // permanente
+      },
+    };
+    const permanentTurn2 = runGoalPlanSimulation({
+      ...permanentBase,
+      milestones: [{ id: "m1", kind: "manaAvailable", turn: 2, minMana: 4 }],
+    });
+    expect(oneShotTurn2.overallProbability).toBeLessThan(permanentTurn2.overallProbability);
+  });
 });

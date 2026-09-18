@@ -102,6 +102,7 @@ export function GoalPlanner({
             requirement: cardRequirement(c),
             copies: c.quantity,
             manaProduced: cat === "ramp" ? c.manaProduced : undefined,
+            manaDuration: cat === "ramp" && c.isRitual ? "oneShot" : undefined,
           });
         }
       }
@@ -190,6 +191,7 @@ export function GoalPlanner({
                       copies: c.quantity,
                       requirement: cardRequirement(c),
                       manaProduced: c.isRamp ? c.manaProduced : undefined,
+                      manaDuration: c.isRamp && c.isRitual ? ("oneShot" as const) : undefined,
                     };
                   })();
         if (row.kind === "castCard") {

@@ -20,6 +20,14 @@ export interface ClassifiedCard {
   isRamp: boolean;
   /** quanta mana uma ativação de rampa/rocha produz (heurística sobre "add ...", editável na UI). */
   manaProduced: number;
+  /**
+   * true para rampa que é instant/sorcery (Dark Ritual, Seething Song...):
+   * a mana produzida é um "estouro" só do turno em que foi conjurada, ao
+   * contrário de rochas/dorks permanentes que continuam produzindo mana nos
+   * turnos seguintes. Usado pra não contar mana de ritual como disponível
+   * nos turnos futuros no simulador de plano de jogo.
+   */
+  isRitual: boolean;
   isTutor: boolean;
   tutorTargetsAny: boolean;
   tutorTargetHint: string | null;
@@ -158,6 +166,7 @@ export function classifyCard(
   }
 
   const isRamp = !isLand && (RAMP_RE.test(oracleText) || isBasicLandTutor);
+  const isRitual = isRamp && /^(instant|sorcery)\b/i.test(typeLine);
 
   return {
     name: card.name,
@@ -176,6 +185,7 @@ export function classifyCard(
     isManaSource,
     isRamp,
     manaProduced: isRamp && isManaSource ? parseManaProduced(oracleText) : 0,
+    isRitual,
     isTutor: tutorMatch && !isBasicLandTutor,
     tutorTargetsAny,
     tutorTargetHint,

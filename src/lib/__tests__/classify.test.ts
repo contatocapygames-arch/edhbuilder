@@ -137,3 +137,48 @@ describe("classifyCard mana production", () => {
     expect(c.manaProduced).toBe(0);
   });
 });
+
+describe("classifyCard ritual detection", () => {
+  it("flags Dark Ritual as a one-shot ritual (instant/sorcery ramp), not a permanent source", () => {
+    const c = classifyCard(
+      card({ name: "Dark Ritual", type_line: "Instant", oracle_text: "Add {B}{B}{B}." }),
+      1,
+      false
+    );
+    expect(c.isRamp).toBe(true);
+    expect(c.manaProduced).toBe(3);
+    expect(c.isRitual).toBe(true);
+  });
+
+  it("flags Seething Song (sorcery) as a ritual too", () => {
+    const c = classifyCard(
+      card({
+        name: "Seething Song",
+        type_line: "Sorcery",
+        oracle_text: "Add {R}{R}{R}{R}{R}.",
+      }),
+      1,
+      false
+    );
+    expect(c.isRitual).toBe(true);
+  });
+
+  it("does not flag permanent ramp (Sol Ring, an artifact) as a ritual", () => {
+    const c = classifyCard(
+      card({ name: "Sol Ring", type_line: "Artifact", oracle_text: "{T}: Add {C}{C}." }),
+      1,
+      false
+    );
+    expect(c.isRamp).toBe(true);
+    expect(c.isRitual).toBe(false);
+  });
+
+  it("does not flag non-ramp cards as rituals", () => {
+    const c = classifyCard(
+      card({ name: "Demonic Tutor", oracle_text: "Search your library for a card and put that card into your hand." }),
+      1,
+      false
+    );
+    expect(c.isRitual).toBe(false);
+  });
+});

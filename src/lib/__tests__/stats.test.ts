@@ -16,6 +16,7 @@ function card(overrides: Partial<ClassifiedCard> & { name: string; quantity: num
     isManaSource: false,
     isRamp: false,
     manaProduced: 0,
+    isRitual: false,
     isTutor: false,
     tutorTargetsAny: false,
     tutorTargetHint: null,
