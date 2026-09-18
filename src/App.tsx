@@ -22,6 +22,7 @@ function App() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState<string[]>([]);
+  const [fuzzyMatched, setFuzzyMatched] = useState<string[]>([]);
   const [cards, setCards] = useState<ClassifiedCard[] | null>(null);
   const [stats, setStats] = useState<DeckStats | null>(null);
   const [onPlay, setOnPlay] = useState(true);
@@ -32,6 +33,7 @@ function App() {
     setLoading(true);
     setError(null);
     setNotFound([]);
+    setFuzzyMatched([]);
     setSizeWarning(null);
     setProgress(null);
     try {
@@ -48,11 +50,12 @@ function App() {
         );
       }
 
-      const { found, notFound: missing } = await fetchCardsByName(
+      const { found, notFound: missing, fuzzyMatched: fuzzy } = await fetchCardsByName(
         entries.map((e) => e.name),
         (done, tot) => setProgress({ done, total: tot })
       );
       setNotFound(missing);
+      setFuzzyMatched(fuzzy);
 
       const classified: ClassifiedCard[] = [];
       for (const entry of entries) {
@@ -105,6 +108,13 @@ function App() {
       {notFound.length > 0 && (
         <p className="error" style={{ color: "var(--warning)" }}>
           Cartas não encontradas no Scryfall (verifique a grafia): {notFound.join(", ")}
+        </p>
+      )}
+      {fuzzyMatched.length > 0 && (
+        <p className="muted" style={{ color: "var(--warning)" }}>
+          Encontradas por correspondência aproximada (nome alternativo, ex. Secret Lair, ou só a
+          face da frente de uma carta de duas faces) — confira se são as cartas certas:{" "}
+          {fuzzyMatched.join(", ")}
         </p>
       )}
 
