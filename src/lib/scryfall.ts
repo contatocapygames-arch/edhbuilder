@@ -36,6 +36,7 @@ const CACHE_PREFIX = "edhbuilder:scryfall:v1:";
 const CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 dias
 const COLLECTION_ENDPOINT = "https://api.scryfall.com/cards/collection";
 const SEARCH_ENDPOINT = "https://api.scryfall.com/cards/search";
+const NAMED_ENDPOINT = "https://api.scryfall.com/cards/named";
 const CHUNK_SIZE = 75;
 const REQUEST_DELAY_MS = 100;
 
@@ -79,12 +80,34 @@ function sleep(ms: number): Promise<void> {
 export interface CollectionFetchResult {
   found: Map<string, ScryfallCard>; // chave: nome original solicitado (lowercase)
   notFound: string[];
+  /** nomes resolvidos só na segunda tentativa (busca aproximada), não por match exato. */
+  fuzzyMatched: string[];
 }
 
 /**
- * Busca cartas em lote pelo nome exato (com fallback fuzzy simplificado:
- * o próprio endpoint /cards/collection já tolera variações de capitalização
- * e pontuação). Usa cache local antes de bater na rede.
+ * Busca uma carta por correspondência aproximada. O endpoint /cards/named
+ * (https://scryfall.com/docs/api/cards/named) tolera o que /cards/collection
+ * não tolera por exigir nome exato: nomes alternativos ("flavor name", comum
+ * em Secret Lair/Universes Beyond), só o nome da face da frente em cartas de
+ * duas faces, pequenos erros de digitação/acentuação etc.
+ */
+async function fetchCardByFuzzyName(name: string): Promise<ScryfallCard | null> {
+  try {
+    const res = await fetch(`${NAMED_ENDPOINT}?fuzzy=${encodeURIComponent(name)}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as ScryfallCard;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Busca cartas em lote pelo nome exato via /cards/collection e, para o que
+ * não for encontrado (nomes alternativos, face da frente de cartas de duas
+ * faces, pequenos erros), tenta de novo uma a uma via busca aproximada
+ * (/cards/named?fuzzy=). Usa cache local antes de bater na rede.
  */
 export async function fetchCardsByName(
   names: string[],
@@ -140,22 +163,43 @@ export async function fetchCardsByName(
 
   // Resolve nomes originais (podem ter capitalização diferente da retornada)
   const resolved = new Map<string, ScryfallCard>();
+  let stillMissing = Array.from(new Set(notFound));
   for (const name of uniqueNames) {
     const lower = name.toLowerCase();
     const hit = found.get(lower);
     if (hit) resolved.set(lower, hit);
-    else if (!notFound.some((nf) => nf.toLowerCase() === lower)) {
+    else if (!stillMissing.some((nf) => nf.toLowerCase() === lower)) {
       // Nome não veio exatamente igual (ex.: acentos) mas Scryfall pode ter
       // retornado por fuzzy match interno; tenta achar por proximidade simples.
       const alt = Array.from(found.values()).find(
         (c) => c.name.toLowerCase() === lower
       );
       if (alt) resolved.set(lower, alt);
-      else notFound.push(name);
+      else stillMissing.push(name);
     }
   }
+  stillMissing = Array.from(new Set(stillMissing));
 
-  return { found: resolved, notFound: Array.from(new Set(notFound)) };
+  // Segunda tentativa: nomes alternativos (flavor name), face da frente de
+  // cartas de duas faces, pequenos erros — um a um via busca aproximada.
+  const fuzzyMatched: string[] = [];
+  const trulyMissing: string[] = [];
+  for (const name of stillMissing) {
+    const card = await fetchCardByFuzzyName(name);
+    if (card) {
+      resolved.set(name.toLowerCase(), card);
+      writeCache(card.name, card);
+      writeCache(name, card); // cacheia também pelo alias buscado, para não repetir a busca aproximada
+      fuzzyMatched.push(name);
+    } else {
+      trulyMissing.push(name);
+    }
+    done = Math.min(done + 1, uniqueNames.length);
+    onProgress?.(done, uniqueNames.length);
+    await sleep(REQUEST_DELAY_MS);
+  }
+
+  return { found: resolved, notFound: trulyMissing, fuzzyMatched };
 }
 
 /**

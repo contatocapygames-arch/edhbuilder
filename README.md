@@ -23,6 +23,17 @@ npm run test      # testes do motor matemático (vitest)
 
 ## O que o app calcula, e por quê
 
+### 0. Busca de cartas com fallback aproximado (`src/lib/scryfall.ts`)
+
+A busca em lote (`/cards/collection`) exige nome exato, o que falha em dois
+casos comuns: nomes alternativos ("flavor name", usados em Secret Lair /
+Universes Beyond) e listas que trazem só o nome da face da frente de uma
+carta de duas faces (ex.: "Delver of Secrets" em vez de "Delver of Secrets //
+Insectile Aberration"). Para qualquer nome que não bate exato, o app tenta de
+novo, um a um, via busca aproximada (`/cards/named?fuzzy=`) — o mesmo
+endpoint tolerante a variação que o próprio Scryfall usa. Cartas resolvidas
+assim aparecem destacadas na tela para o usuário conferir.
+
 ### 1. Classificação das cartas (`src/lib/classify.ts`)
 
 Cada carta buscada no Scryfall é classificada por **heurísticas sobre o oracle
