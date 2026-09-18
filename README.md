@@ -104,6 +104,20 @@ Stage): um slot marcado como "só terreno" conta como a jogada de terreno do
 turno quando é comprado, e o terreno "de preenchimento" do resto do baralho é
 calculado descontando essas cópias, para não contar a mesma carta duas vezes.
 
+Compra de cartas também acelera achar o combo, além dos tutores — a simulação
+modela isso com duas categorias: **compra única** (ex.: Harmonize — resolve
+uma vez e se esgota) e **motor recorrente** (ex.: Rhystic Study, Phyrexian
+Arena, Sylvan Library — uma vez em campo, compra de novo a cada turno
+seguinte sem precisar ser conjurada outra vez). `classify.ts` detecta essas
+cartas e pré-preenche quantas cartas cada uma compra e se é provavelmente um
+motor (gatilho de upkeep/passo de compra, ou "sempre que um oponente
+conjura"), mas o usuário pode corrigir. Em cada turno, a mana disponível é
+gasta primeiro em compra (para cavar mais fundo) e só o que sobra vai para
+tutores — uma ordem simples e documentada, não uma escolha "ótima" carta a
+carta. Simplificação assumida: o gatilho de compra sempre resolve (não
+modela o oponente pagando para negar Rhystic Study/Mystic Remora, nem o
+"put back" de Sylvan Library).
+
 Os testes em `src/lib/__tests__/simulation.test.ts` verificam que a simulação
 converge para o valor hipergeométrico exato quando não há tutores, que um
 tutor dedicado aumenta a probabilidade do combo, e que um tutor wildcard não

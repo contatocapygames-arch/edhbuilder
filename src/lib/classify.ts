@@ -24,6 +24,15 @@ export interface ClassifiedCard {
   /** 'hand' = a carta buscada vai direto pra mão; 'top' = vai para o topo do baralho (compra no turno seguinte). */
   tutorSpeed: "hand" | "top" | null;
   isDraw: boolean;
+  /** quantas cartas o primeiro efeito de compra detectado no texto compra (heurística, editável na UI). */
+  drawAmount: number;
+  /**
+   * true para efeitos de compra recorrentes (gatilho de upkeep/passo de
+   * compra, ou "sempre que um oponente conjura" como Rhystic Study/Mystic
+   * Remora) — só um sinal para pré-selecionar "motor" vs "compra única" no
+   * simulador de combo; o usuário pode corrigir manualmente.
+   */
+  isRepeatableDraw: boolean;
   isRemoval: boolean;
   /** pips de cada cor no custo de mana (para comparar com fontes disponíveis). */
   pips: Record<ManaColor, number>;
@@ -79,7 +88,29 @@ const TUTOR_RE = /search your library for (a|an|up to \w+|\d+)?\s*.*?card/i;
 const TUTOR_ANY_RE = /search your library for (a|an|any) card\b(?!.*\b(basic land|creature|artifact|instant|sorcery|enchantment|planeswalker|land)\b)/i;
 const TUTOR_TOP_RE =
   /search your library for[^.;]*(put (it|that card|those cards) on top of (your|their) library|reveal it,? (and )?put it on top)/i;
-const DRAW_RE = /draw (a|two|three|four|\d+|x) cards?/i;
+const DRAW_RE = /draw (a|an|two|three|four|five|six|\d+|x) (additional )?cards?/i;
+const DRAW_ENGINE_RE =
+  /(at the beginning of (your|each|each player's) (draw step|upkeep|end step)|whenever (an opponent|a player|another player) casts)/i;
+const DRAW_WORD_TO_NUMBER: Record<string, number> = {
+  a: 1,
+  an: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+};
+
+/** Quantas cartas o primeiro efeito de compra do texto compra (0 se não houver). */
+function parseDrawAmount(oracleText: string): number {
+  const m = oracleText.match(DRAW_RE);
+  if (!m) return 0;
+  const token = m[1].toLowerCase();
+  if (token === "x") return 1; // quantidade variável: default conservador, editável na UI
+  if (/^\d+$/.test(token)) return parseInt(token, 10);
+  return DRAW_WORD_TO_NUMBER[token] ?? 1;
+}
+
 const REMOVAL_RE =
   /(destroy target|exile target|counter target spell|-\d+\/-\d+.*target|target (creature|permanent|player).*(sacrifice|gets? -)|deals? \d+ damage to target|return target .* to (its owner|hand))/i;
 
@@ -124,6 +155,8 @@ export function classifyCard(
     tutorTargetHint,
     tutorSpeed: tutorMatch && !isBasicLandTutor ? (TUTOR_TOP_RE.test(oracleText) ? "top" : "hand") : null,
     isDraw: DRAW_RE.test(oracleText),
+    drawAmount: parseDrawAmount(oracleText),
+    isRepeatableDraw: DRAW_RE.test(oracleText) && DRAW_ENGINE_RE.test(oracleText),
     isRemoval: REMOVAL_RE.test(oracleText),
     pips: countPips(manaCost),
   };

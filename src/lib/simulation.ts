@@ -27,6 +27,25 @@ export interface SimPiece {
   isLand?: boolean;
 }
 
+export interface SimDrawSource {
+  id: string;
+  label: string;
+  copies: number;
+  /** custo de mana genérico necessário para conjurar. */
+  cmc: number;
+  /** quantas cartas cada ativação compra. */
+  cardsPerDraw: number;
+  /**
+   * 'burst' = compra as cartas uma vez, ao ser conjurada, e se esgota (ex.:
+   * Harmonize). 'engine' = fica em campo e compra `cardsPerDraw` cartas a
+   * cada turno seguinte, sem precisar ser conjurada de novo (ex.: Rhystic
+   * Study, Phyrexian Arena, Sylvan Library) — simplificação: assume que o
+   * gatilho sempre resolve (não modela o oponente pagando para negar
+   * Rhystic Study/Mystic Remora, nem o "put back" de Sylvan Library).
+   */
+  mode: "burst" | "engine";
+}
+
 export interface SimTutor {
   id: string;
   label: string;
@@ -45,6 +64,8 @@ export interface SimConfig {
   onPlay: boolean;
   pieces: SimPiece[];
   tutors: SimTutor[];
+  /** compra de cartas avulsa ou recorrente (Rhystic Study, Phyrexian Arena, Harmonize...); opcional. */
+  drawSources?: SimDrawSource[];
   maxTurn: number;
   trials: number;
   startingHandSize?: number;
@@ -65,6 +86,7 @@ import { createRng, shuffle } from "./rng";
 type Token =
   | { kind: "piece"; pieceId: string; isLand?: boolean }
   | { kind: "tutor"; tutorId: string }
+  | { kind: "draw"; sourceId: string }
   | { kind: "land" }
   | { kind: "other" };
 
@@ -76,6 +98,9 @@ function buildDeck(config: SimConfig): Token[] {
   for (const t of config.tutors) {
     for (let i = 0; i < t.copies; i++) deck.push({ kind: "tutor", tutorId: t.id });
   }
+  for (const d of config.drawSources ?? []) {
+    for (let i = 0; i < d.copies; i++) deck.push({ kind: "draw", sourceId: d.id });
+  }
   const usedSlots = deck.length;
   const landSlots = Math.max(0, config.lands);
   for (let i = 0; i < landSlots; i++) deck.push({ kind: "land" });
@@ -84,7 +109,7 @@ function buildDeck(config: SimConfig): Token[] {
 
   if (deck.length !== config.deckSize) {
     throw new Error(
-      `Configuração inconsistente: peças(${usedSlots}) + terrenos(${landSlots}) excede o tamanho do baralho (${config.deckSize}).`
+      `Configuração inconsistente: peças + tutores + compra (${usedSlots}) + terrenos(${landSlots}) excede o tamanho do baralho (${config.deckSize}).`
     );
   }
   return deck;
@@ -105,26 +130,41 @@ function runSingleTrial(
   const found = new Set<string>();
   const pieceById = new Map(config.pieces.map((p) => [p.id, p]));
   const tutorTargetById = new Map(config.tutors.map((t) => [t.id, t]));
+  const drawSourceById = new Map((config.drawSources ?? []).map((d) => [d.id, d]));
+  const activeEngines = new Set<string>();
   let landsInPlay = 0;
   let pendingTopNextDraw: Token | null = null;
 
   const markFound = (pieceId: string) => found.add(pieceId);
+  const drawFromLibrary = (count: number) => {
+    for (let i = 0; i < count; i++) {
+      if (libIndex >= library.length) break;
+      const tok = library[libIndex++];
+      hand.push(tok);
+      if (tok.kind === "piece") markFound(tok.pieceId);
+    }
+  };
+
   for (const tok of hand) if (tok.kind === "piece") markFound(tok.pieceId);
   if (found.size === config.pieces.length) return 0;
 
   const tutorsPerTurn = config.tutorsPerTurn ?? 1;
 
   for (let turn = 1; turn <= config.maxTurn; turn++) {
-    const draws: Token[] = [];
+    // Motores de compra já em campo (Rhystic Study, Phyrexian Arena, Sylvan
+    // Library...) disparam no início do turno, antes da compra normal.
+    for (const sourceId of activeEngines) {
+      const spec = drawSourceById.get(sourceId);
+      if (spec) drawFromLibrary(spec.cardsPerDraw);
+    }
+    if (found.size === config.pieces.length) return turn;
+
     if (pendingTopNextDraw) {
-      draws.push(pendingTopNextDraw);
+      hand.push(pendingTopNextDraw);
+      if (pendingTopNextDraw.kind === "piece") markFound(pendingTopNextDraw.pieceId);
       pendingTopNextDraw = null;
     } else if (!(config.onPlay && turn === 1)) {
-      if (libIndex < library.length) draws.push(library[libIndex++]);
-    }
-    for (const tok of draws) {
-      hand.push(tok);
-      if (tok.kind === "piece") markFound(tok.pieceId);
+      drawFromLibrary(1);
     }
     if (found.size === config.pieces.length) return turn;
 
@@ -133,6 +173,39 @@ function runSingleTrial(
       hand.splice(landIdx, 1);
       landsInPlay++;
     }
+
+    // Mana disponível no turno: gasta primeiro em compra (cava mais fundo),
+    // depois no que sobrar em tutores — ordem simples e documentada, não
+    // uma escolha "ótima" carta a carta.
+    let availableMana = landsInPlay;
+
+    let castingDraw = true;
+    while (castingDraw) {
+      castingDraw = false;
+      let bestIdx = -1;
+      let bestCmc = Infinity;
+      for (let i = 0; i < hand.length; i++) {
+        const t = hand[i];
+        if (t.kind !== "draw") continue;
+        const spec = drawSourceById.get(t.sourceId);
+        if (spec && spec.cmc <= availableMana && spec.cmc < bestCmc) {
+          bestCmc = spec.cmc;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx < 0) break;
+      const tok = hand[bestIdx] as { kind: "draw"; sourceId: string };
+      const spec = drawSourceById.get(tok.sourceId)!;
+      hand.splice(bestIdx, 1);
+      availableMana -= spec.cmc;
+      if (spec.mode === "burst") {
+        drawFromLibrary(spec.cardsPerDraw);
+      } else {
+        activeEngines.add(spec.id);
+      }
+      castingDraw = true;
+    }
+    if (found.size === config.pieces.length) return turn;
 
     let castThisTurn = 0;
     let progress = true;
@@ -143,7 +216,7 @@ function runSingleTrial(
       const tutorIdx = hand.findIndex((t) => {
         if (t.kind !== "tutor") return false;
         const spec = tutorTargetById.get(t.tutorId);
-        if (!spec || landsInPlay < spec.cmc) return false;
+        if (!spec || availableMana < spec.cmc) return false;
         if (spec.targets === "any") return true;
         return spec.targets.some((id) => missing.includes(id));
       });
@@ -154,6 +227,7 @@ function runSingleTrial(
         spec.targets === "any" ? missing[0] : missing.find((id) => spec.targets.includes(id));
       if (!target) break;
       hand.splice(tutorIdx, 1);
+      availableMana -= spec.cmc;
       const targetIsLand = pieceById.get(target)?.isLand;
       if (spec.speed === "hand") {
         hand.push({ kind: "piece", pieceId: target, isLand: targetIsLand });

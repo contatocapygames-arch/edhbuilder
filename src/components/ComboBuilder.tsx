@@ -15,6 +15,12 @@ interface TutorConfig {
   groupIds: string[];
 }
 
+interface DrawConfig {
+  enabled: boolean;
+  mode: "burst" | "engine";
+  cardsPerDraw: number;
+}
+
 let groupCounter = 0;
 
 export function ComboBuilder({
@@ -33,12 +39,14 @@ export function ComboBuilder({
     [cards]
   );
   const tutorCards = useMemo(() => cards.filter((c) => c.isTutor && !c.isCommander), [cards]);
+  const drawCards = useMemo(() => cards.filter((c) => c.isDraw && !c.isCommander), [cards]);
 
   const [groups, setGroups] = useState<ComboGroup[]>([
     { id: `g${groupCounter++}`, label: "Peça 1", cardNames: [] },
     { id: `g${groupCounter++}`, label: "Peça 2", cardNames: [] },
   ]);
   const [tutorConfigs, setTutorConfigs] = useState<Record<string, TutorConfig>>({});
+  const [drawConfigs, setDrawConfigs] = useState<Record<string, DrawConfig>>({});
   const [maxTurn, setMaxTurn] = useState(10);
   const [trials, setTrials] = useState(15000);
   const [result, setResult] = useState<SimResult | null>(null);
@@ -50,6 +58,19 @@ export function ComboBuilder({
   }
   function setTutorConfig(name: string, patch: Partial<TutorConfig>) {
     setTutorConfigs((prev) => ({ ...prev, [name]: { ...getTutorConfig(name), ...patch } }));
+  }
+
+  function getDrawConfig(card: ClassifiedCard): DrawConfig {
+    return (
+      drawConfigs[card.name] ?? {
+        enabled: false,
+        mode: card.isRepeatableDraw ? "engine" : "burst",
+        cardsPerDraw: Math.max(1, card.drawAmount),
+      }
+    );
+  }
+  function setDrawConfig(name: string, patch: Partial<DrawConfig>, card: ClassifiedCard) {
+    setDrawConfigs((prev) => ({ ...prev, [name]: { ...getDrawConfig(card), ...patch } }));
   }
 
   function addGroup() {
@@ -93,6 +114,20 @@ export function ComboBuilder({
           };
         });
 
+      const drawSources = drawCards
+        .filter((d) => getDrawConfig(d).enabled)
+        .map((d) => {
+          const cfg = getDrawConfig(d);
+          return {
+            id: d.name,
+            label: d.name,
+            copies: d.quantity,
+            cmc: d.cmc,
+            cardsPerDraw: Math.max(1, cfg.cardsPerDraw),
+            mode: cfg.mode,
+          };
+        });
+
       // Terrenos que já viraram peça do combo não entram de novo como
       // "terreno de preenchimento" (senão o baralho contaria a mesma carta
       // duas vezes).
@@ -107,6 +142,7 @@ export function ComboBuilder({
         onPlay,
         pieces,
         tutors,
+        drawSources,
         maxTurn,
         trials,
       });
@@ -135,10 +171,11 @@ export function ComboBuilder({
       <h2>5. Probabilidade do combo (considerando tutores)</h2>
       <p className="muted">
         Defina os "slots" do seu combo (cada slot pode ter várias cartas redundantes — qualquer
-        uma delas conta; terrenos também podem ser peça, ex.: Dark Depths + Thespian's Stage) e
-        marque quais tutores podem buscar quais slots. O cálculo usa simulação Monte Carlo
-        (baralho embaralhado, compras turno a turno, terrenos jogados, tutores conjurados quando
-        há mana), porque um tutor "busca qualquer carta" só resolve UM slot em falta por vez —
+        uma delas conta; terrenos também podem ser peça, ex.: Dark Depths + Thespian's Stage),
+        marque quais tutores podem buscar quais slots, e quais cartas de compra usar para "cavar"
+        o deck. O cálculo usa simulação Monte Carlo (baralho embaralhado, compras turno a turno,
+        terrenos jogados, tutores/compra conjurados quando há mana — compra primeiro, tutor com o
+        que sobrar), porque um tutor "busca qualquer carta" só resolve UM slot em falta por vez —
         isso não é exatamente capturado por uma fórmula fechada simples.
       </p>
 
@@ -234,6 +271,68 @@ export function ComboBuilder({
                         {g.label}
                       </label>
                     ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <h3 style={{ marginTop: 20, fontSize: "0.95rem" }}>Cartas de compra detectadas</h3>
+      <p className="muted">
+        Compra de cartas também "cava" o deck em busca do combo, além dos tutores. Marque como
+        "compra única" (ex.: Harmonize — resolve uma vez e se esgota) ou "motor recorrente" (ex.:
+        Rhystic Study, Phyrexian Arena, Sylvan Library — uma vez em campo, compra de novo a cada
+        turno seguinte). Simplificação: assume que o gatilho sempre resolve (não modela o
+        oponente pagando para negar Rhystic Study/Mystic Remora).
+      </p>
+      {drawCards.length === 0 && <p className="muted">Nenhuma carta de compra detectada na lista.</p>}
+      <div className="checklist">
+        {drawCards.map((d) => {
+          const cfg = getDrawConfig(d);
+          return (
+            <div key={d.name}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={cfg.enabled}
+                  onChange={(e) => setDrawConfig(d.name, { enabled: e.target.checked }, d)}
+                />
+                {d.name} (CMV {d.cmc})
+              </label>
+              {cfg.enabled && (
+                <div className="row" style={{ marginLeft: 24, marginTop: 4 }}>
+                  <label>
+                    <input
+                      type="radio"
+                      name={`draw-mode-${d.name}`}
+                      checked={cfg.mode === "burst"}
+                      onChange={() => setDrawConfig(d.name, { mode: "burst" }, d)}
+                    />
+                    compra única
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name={`draw-mode-${d.name}`}
+                      checked={cfg.mode === "engine"}
+                      onChange={() => setDrawConfig(d.name, { mode: "engine" }, d)}
+                    />
+                    motor recorrente (todo turno seguinte)
+                  </label>
+                  <label>
+                    cartas por ativação
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={cfg.cardsPerDraw}
+                      onChange={(e) =>
+                        setDrawConfig(d.name, { cardsPerDraw: parseInt(e.target.value, 10) || 1 }, d)
+                      }
+                      style={{ width: 56, marginLeft: 6 }}
+                    />
+                  </label>
                 </div>
               )}
             </div>
