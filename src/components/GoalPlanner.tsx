@@ -190,7 +190,7 @@ export function GoalPlanner({
 
   return (
     <div className="card">
-      <h2>7. Objetivos do deck (plano de jogo)</h2>
+      <h2>6. Objetivos do deck (plano de jogo)</h2>
       <p className="muted">
         Monte uma sequência de metas — ex.: "turno 1, conjurar o Comandante" + "turno 2, ter 4
         terrenos". Todas são avaliadas <strong>juntas, na mesma partida simulada</strong> (não

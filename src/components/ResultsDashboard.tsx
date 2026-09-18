@@ -3,7 +3,8 @@ import type { DeckStats } from "../lib/stats";
 import { colorSourceProbability, landDropProbability } from "../lib/probability";
 import { BarChart } from "./charts/BarChart";
 import { LineChart, Legend, type LineSeries } from "./charts/LineChart";
-import { ALL_COLORS, type ManaColor } from "../lib/classify";
+import { ALL_COLORS, type ClassifiedCard, type ManaColor } from "../lib/classify";
+import { LandBaseSuggestions } from "./LandBaseSuggestions";
 
 const COLOR_NAMES: Record<ManaColor, string> = {
   W: "Branco",
@@ -22,7 +23,15 @@ const COLOR_HEX: Record<ManaColor, string> = {
   C: "var(--text-muted)",
 };
 
-export function ResultsDashboard({ stats, onPlay }: { stats: DeckStats; onPlay: boolean }) {
+export function ResultsDashboard({
+  stats,
+  onPlay,
+  cards,
+}: {
+  stats: DeckStats;
+  onPlay: boolean;
+  cards: ClassifiedCard[];
+}) {
   const [checkTurn, setCheckTurn] = useState(4);
   const [checkMana, setCheckMana] = useState(4);
   const [checkColor, setCheckColor] = useState<ManaColor>("U");
@@ -152,6 +161,8 @@ export function ResultsDashboard({ stats, onPlay }: { stats: DeckStats; onPlay: 
         médio, validadas por simulação Monte Carlo) — é uma referência, não uma garantia; confie
         nos números exatos calculados acima para o seu deck específico.
       </p>
+
+      <LandBaseSuggestions cards={cards} />
     </div>
   );
 }

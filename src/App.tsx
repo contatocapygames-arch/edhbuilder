@@ -125,7 +125,7 @@ function App() {
             <h2>Visão geral</h2>
             <StatTiles stats={stats} />
           </div>
-          <ResultsDashboard stats={stats} onPlay={onPlay} />
+          <ResultsDashboard stats={stats} onPlay={onPlay} cards={cards} />
           <EfficiencyPanel stats={stats} onPlay={onPlay} maxTurn={maxTurn} />
           <ComboBuilder
             cards={cards}
@@ -135,7 +135,7 @@ function App() {
           />
           <GoalPlanner cards={cards} librarySize={stats.librarySize} onPlay={onPlay} />
           <div className="card">
-            <h2>8. Todas as cartas classificadas</h2>
+            <h2>7. Todas as cartas classificadas</h2>
             <CardTable cards={cards} />
           </div>
         </>
