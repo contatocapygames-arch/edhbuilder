@@ -5,6 +5,7 @@ import { CardTable } from "./components/CardTable";
 import { ResultsDashboard } from "./components/ResultsDashboard";
 import { EfficiencyPanel } from "./components/EfficiencyPanel";
 import { ComboBuilder } from "./components/ComboBuilder";
+import { GoalPlanner } from "./components/GoalPlanner";
 import { parseDecklist, totalCardCount } from "./lib/deckParser";
 import { fetchCardsByName } from "./lib/scryfall";
 import { classifyCard, type ClassifiedCard } from "./lib/classify";
@@ -132,8 +133,9 @@ function App() {
             landCount={stats.landCount}
             onPlay={onPlay}
           />
+          <GoalPlanner cards={cards} librarySize={stats.librarySize} onPlay={onPlay} />
           <div className="card">
-            <h2>6. Todas as cartas classificadas</h2>
+            <h2>8. Todas as cartas classificadas</h2>
             <CardTable cards={cards} />
           </div>
         </>
