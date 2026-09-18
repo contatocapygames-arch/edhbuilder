@@ -174,9 +174,9 @@ export function ComboBuilder({
         uma delas conta; terrenos também podem ser peça, ex.: Dark Depths + Thespian's Stage),
         marque quais tutores podem buscar quais slots, e quais cartas de compra usar para "cavar"
         o deck. O cálculo usa simulação Monte Carlo (baralho embaralhado, compras turno a turno,
-        terrenos jogados, tutores/compra conjurados quando há mana — compra primeiro, tutor com o
-        que sobrar), porque um tutor "busca qualquer carta" só resolve UM slot em falta por vez —
-        isso não é exatamente capturado por uma fórmula fechada simples.
+        terrenos jogados, tutores/compra conjurados quando há mana — tutor primeiro (ação
+        certeira), compra com o que sobrar), porque um tutor "busca qualquer carta" só resolve UM
+        slot em falta por vez — isso não é exatamente capturado por uma fórmula fechada simples.
       </p>
 
       {groups.map((g) => (
