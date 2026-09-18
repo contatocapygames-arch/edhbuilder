@@ -99,6 +99,11 @@ peças ainda não encontradas. Isso é a mesma abordagem usada por calculadoras
 de consistência publicadas (e pelas próprias simulações de mana base de
 Karsten, feitas sobre milhões de partidas amostradas).
 
+Terrenos também podem ser peça do combo (ex.: Dark Depths + Thespian's
+Stage): um slot marcado como "só terreno" conta como a jogada de terreno do
+turno quando é comprado, e o terreno "de preenchimento" do resto do baralho é
+calculado descontando essas cópias, para não contar a mesma carta duas vezes.
+
 Os testes em `src/lib/__tests__/simulation.test.ts` verificam que a simulação
 converge para o valor hipergeométrico exato quando não há tutores, que um
 tutor dedicado aumenta a probabilidade do combo, e que um tutor wildcard não

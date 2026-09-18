@@ -18,6 +18,13 @@ export interface SimPiece {
   label?: string;
   /** total de cópias no baralho que satisfazem esta peça (redundâncias já somadas). */
   copies: number;
+  /**
+   * true quando esta peça é (ou inclui apenas) terrenos — ex.: combos como
+   * Dark Depths + Thespian's Stage. Uma peça-terreno comprada/buscada conta
+   * como a jogada de terreno do turno, igual a um terreno comum; sem essa
+   * flag ela ficaria "presa na mão" sem nunca virar mana/jogada de terreno.
+   */
+  isLand?: boolean;
 }
 
 export interface SimTutor {
@@ -56,7 +63,7 @@ export interface SimResult {
 import { createRng, shuffle } from "./rng";
 
 type Token =
-  | { kind: "piece"; pieceId: string }
+  | { kind: "piece"; pieceId: string; isLand?: boolean }
   | { kind: "tutor"; tutorId: string }
   | { kind: "land" }
   | { kind: "other" };
@@ -64,7 +71,7 @@ type Token =
 function buildDeck(config: SimConfig): Token[] {
   const deck: Token[] = [];
   for (const p of config.pieces) {
-    for (let i = 0; i < p.copies; i++) deck.push({ kind: "piece", pieceId: p.id });
+    for (let i = 0; i < p.copies; i++) deck.push({ kind: "piece", pieceId: p.id, isLand: p.isLand });
   }
   for (const t of config.tutors) {
     for (let i = 0; i < t.copies; i++) deck.push({ kind: "tutor", tutorId: t.id });
@@ -96,6 +103,7 @@ function runSingleTrial(
   const library = deck;
 
   const found = new Set<string>();
+  const pieceById = new Map(config.pieces.map((p) => [p.id, p]));
   const tutorTargetById = new Map(config.tutors.map((t) => [t.id, t]));
   let landsInPlay = 0;
   let pendingTopNextDraw: Token | null = null;
@@ -120,7 +128,7 @@ function runSingleTrial(
     }
     if (found.size === config.pieces.length) return turn;
 
-    const landIdx = hand.findIndex((t) => t.kind === "land");
+    const landIdx = hand.findIndex((t) => t.kind === "land" || (t.kind === "piece" && t.isLand));
     if (landIdx >= 0) {
       hand.splice(landIdx, 1);
       landsInPlay++;
@@ -146,11 +154,12 @@ function runSingleTrial(
         spec.targets === "any" ? missing[0] : missing.find((id) => spec.targets.includes(id));
       if (!target) break;
       hand.splice(tutorIdx, 1);
+      const targetIsLand = pieceById.get(target)?.isLand;
       if (spec.speed === "hand") {
-        hand.push({ kind: "piece", pieceId: target });
+        hand.push({ kind: "piece", pieceId: target, isLand: targetIsLand });
         markFound(target);
       } else {
-        pendingTopNextDraw = { kind: "piece", pieceId: target };
+        pendingTopNextDraw = { kind: "piece", pieceId: target, isLand: targetIsLand };
       }
       castThisTurn++;
       progress = true;
