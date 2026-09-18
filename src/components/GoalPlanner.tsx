@@ -3,6 +3,7 @@ import type { ClassifiedCard } from "../lib/classify";
 import {
   runGoalPlanSimulation,
   type CastRequirement,
+  type CastTarget,
   type GoalMilestone,
   type GoalPlanConfig,
   type GoalPlanResult,
@@ -20,19 +21,21 @@ const COLOR_LABEL: Record<ManaColor, string> = {
 const CATEGORY_LABEL = { ramp: "Rampa", tutor: "Tutor", draw: "Compra", removal: "Remoção" } as const;
 type Category = keyof typeof CATEGORY_LABEL;
 
-type RowKind = "landCount" | "colorSources" | "castCard" | "castCount";
-type TargetKind = "commander" | "card" | "category";
+type RowKind = "landCount" | "manaAvailable" | "colorSources" | "castCard" | "castCount";
+type TargetKind = "commander" | "card" | "category" | "cmc";
 
 interface MilestoneRow {
   id: string;
   kind: RowKind;
   turn: number;
   minLands: number;
+  minMana: number;
   color: ManaColor;
   minSources: number;
   targetKind: TargetKind;
   targetCardName: string;
   targetCategory: Category;
+  targetCmc: number;
   minCount: number;
 }
 
@@ -43,11 +46,13 @@ function newRow(): MilestoneRow {
     kind: "landCount",
     turn: 1,
     minLands: 1,
+    minMana: 1,
     color: "U",
     minSources: 1,
     targetKind: "commander",
     targetCardName: "",
     targetCategory: "ramp",
+    targetCmc: 2,
     minCount: 1,
   };
 }
@@ -92,7 +97,13 @@ export function GoalPlanner({
     for (const c of cards) {
       if (c.isCommander || c.isLand) continue;
       for (const cat of Object.keys(flags) as Category[]) {
-        if (c[flags[cat]]) byCategory[cat].push({ requirement: cardRequirement(c), copies: c.quantity });
+        if (c[flags[cat]]) {
+          byCategory[cat].push({
+            requirement: cardRequirement(c),
+            copies: c.quantity,
+            manaProduced: cat === "ramp" ? c.manaProduced : undefined,
+          });
+        }
       }
     }
     return byCategory;
@@ -116,6 +127,8 @@ export function GoalPlanner({
 
   function rowLabel(row: MilestoneRow): string {
     if (row.kind === "landCount") return `Turno ${row.turn}: pelo menos ${row.minLands} terreno(s) em jogo`;
+    if (row.kind === "manaAvailable")
+      return `Turno ${row.turn}: pelo menos ${row.minMana} mana disponível (terrenos + rampa em jogo)`;
     if (row.kind === "colorSources")
       return `Turno ${row.turn}: pelo menos ${row.minSources} fonte(s) de ${COLOR_LABEL[row.color]}`;
     const targetLabel =
@@ -123,7 +136,9 @@ export function GoalPlanner({
         ? "o Comandante"
         : row.targetKind === "card"
           ? row.targetCardName || "(escolha uma carta)"
-          : CATEGORY_LABEL[row.targetCategory];
+          : row.targetKind === "cmc"
+            ? `algo de CMV ${row.targetCmc}`
+            : CATEGORY_LABEL[row.targetCategory];
     if (row.kind === "castCard") return `Turno ${row.turn}: conseguir conjurar ${targetLabel}`;
     return `Até o turno ${row.turn}: conjurar ${targetLabel} pelo menos ${row.minCount}x`;
   }
@@ -132,9 +147,22 @@ export function GoalPlanner({
     setRunning(true);
     setError(null);
     try {
+      const cmcCards: NonNullable<GoalPlanConfig["cmcCards"]> = {};
+      function cmcTarget(cmc: number): Extract<CastTarget, { type: "cmc" }> {
+        if (!(cmc in cmcCards)) {
+          const matching = castableCards.filter((c) => c.cmc === cmc);
+          const copies = matching.reduce((s, c) => s + c.quantity, 0);
+          cmcCards[cmc] = copies > 0 ? [{ requirement: { cmc, pips: {} }, copies }] : [];
+        }
+        return { type: "cmc", cmc, label: `CMV ${cmc}` };
+      }
+
       const milestones: GoalMilestone[] = rows.map((row) => {
         if (row.kind === "landCount") {
           return { id: row.id, kind: "landCount", turn: row.turn, minLands: row.minLands };
+        }
+        if (row.kind === "manaAvailable") {
+          return { id: row.id, kind: "manaAvailable", turn: row.turn, minMana: row.minMana };
         }
         if (row.kind === "colorSources") {
           return {
@@ -150,20 +178,23 @@ export function GoalPlanner({
             ? ({ type: "commander" } as const)
             : row.targetKind === "category"
               ? ({ type: "category", category: row.targetCategory, label: CATEGORY_LABEL[row.targetCategory] } as const)
-              : (() => {
-                  const c = castableCards.find((x) => x.name === row.targetCardName);
-                  if (!c) throw new Error(`Escolha uma carta válida para a meta "${rowLabel(row)}".`);
-                  return {
-                    type: "card" as const,
-                    id: c.name,
-                    label: c.name,
-                    copies: c.quantity,
-                    requirement: cardRequirement(c),
-                  };
-                })();
+              : row.targetKind === "cmc"
+                ? cmcTarget(row.targetCmc)
+                : (() => {
+                    const c = castableCards.find((x) => x.name === row.targetCardName);
+                    if (!c) throw new Error(`Escolha uma carta válida para a meta "${rowLabel(row)}".`);
+                    return {
+                      type: "card" as const,
+                      id: c.name,
+                      label: c.name,
+                      copies: c.quantity,
+                      requirement: cardRequirement(c),
+                      manaProduced: c.isRamp ? c.manaProduced : undefined,
+                    };
+                  })();
         if (row.kind === "castCard") {
           if (target.type === "category") {
-            throw new Error(`"Conjurar carta" precisa de uma carta específica ou do Comandante, não uma categoria.`);
+            throw new Error(`"Conjurar carta" precisa de uma carta específica, CMV ou do Comandante, não uma categoria.`);
           }
           return { id: row.id, kind: "castCard", turn: row.turn, target };
         }
@@ -177,6 +208,7 @@ export function GoalPlanner({
         milestones,
         commander: commander ? cardRequirement(commander) : undefined,
         categoryCards,
+        cmcCards,
         trials,
       });
       setResult(res);
@@ -193,10 +225,12 @@ export function GoalPlanner({
       <h2>6. Objetivos do deck (plano de jogo)</h2>
       <p className="muted">
         Monte uma sequência de metas — ex.: "turno 1, conjurar o Comandante" + "turno 2, ter 4
-        terrenos". Todas são avaliadas <strong>juntas, na mesma partida simulada</strong> (não
-        multiplicando probabilidades soltas), porque a mana gasta numa meta afeta a chance de
-        bater a próxima. O resultado mostra a chance do plano completo e qual meta específica
-        costuma travar.
+        manas disponíveis" ou "turno 3, conseguir conjurar algo de CMV 4". Todas são avaliadas{" "}
+        <strong>juntas, na mesma partida simulada</strong> (não multiplicando probabilidades
+        soltas), porque a mana gasta numa meta afeta a chance de bater a próxima. O resultado
+        mostra a chance do plano completo e qual meta específica costuma travar. "Mana disponível"
+        conta terrenos em jogo + rampa/rochas já conjuradas (Sol Ring, sinetes...), diferente de
+        "terrenos em jogo" que só conta terrenos.
       </p>
 
       {rows.map((row) => (
@@ -204,6 +238,7 @@ export function GoalPlanner({
           <div className="row" style={{ marginTop: 0 }}>
             <select value={row.kind} onChange={(e) => updateRow(row.id, { kind: e.target.value as RowKind })}>
               <option value="landCount">Terrenos em jogo</option>
+              <option value="manaAvailable">Mana disponível (terrenos + rampa)</option>
               <option value="colorSources">Fontes de cor</option>
               <option value="castCard">Conjurar carta</option>
               <option value="castCount">Conjurar N vezes</option>
@@ -233,6 +268,18 @@ export function GoalPlanner({
                   min={1}
                   value={row.minLands}
                   onChange={(e) => updateRow(row.id, { minLands: parseInt(e.target.value, 10) || 1 })}
+                />
+              </label>
+            )}
+
+            {row.kind === "manaAvailable" && (
+              <label>
+                Mín. mana
+                <input
+                  type="number"
+                  min={1}
+                  value={row.minMana}
+                  onChange={(e) => updateRow(row.id, { minMana: parseInt(e.target.value, 10) || 1 })}
                 />
               </label>
             )}
@@ -273,9 +320,22 @@ export function GoalPlanner({
                       Comandante{!commander ? " (não detectado)" : ""}
                     </option>
                     <option value="card">Carta específica</option>
+                    <option value="cmc">CMV específico</option>
                     {row.kind === "castCount" && <option value="category">Categoria</option>}
                   </select>
                 </label>
+                {row.targetKind === "cmc" && (
+                  <label>
+                    CMV
+                    <input
+                      type="number"
+                      min={0}
+                      max={16}
+                      value={row.targetCmc}
+                      onChange={(e) => updateRow(row.id, { targetCmc: parseInt(e.target.value, 10) || 0 })}
+                    />
+                  </label>
+                )}
                 {row.targetKind === "card" && (
                   <label>
                     Carta

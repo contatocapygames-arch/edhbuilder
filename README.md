@@ -170,10 +170,23 @@ métricas mais gerais:
 
 Em vez de estatísticas genéricas, essa seção deixa o usuário descrever o que
 o deck **quer fazer** — ex.: "turno 1, conjurar o Comandante" + "turno 2, ter
-4 terrenos em jogo", ou "até o turno 4, ter conjurado uma carta de rampa pelo
-menos 2 vezes". Cada meta é uma de quatro formas: terrenos em jogo, fontes de
-uma cor, conjurar uma carta/o Comandante num turno, ou conjurar uma
-carta/categoria N vezes até um turno.
+4 manas disponíveis", ou "turno 4, conseguir conjurar algo de CMV 4", ou
+"até o turno 4, ter conjurado uma carta de rampa pelo menos 2 vezes". Cada
+meta é uma de cinco formas: terrenos em jogo, mana disponível (terrenos +
+rampa/rochas já conjuradas), fontes de uma cor, conjurar uma carta
+específica/CMV exato/o Comandante num turno, ou conjurar uma
+carta/categoria/CMV N vezes até um turno.
+
+"Mana disponível" é diferente de "terrenos em jogo": conta também a mana de
+rampa e rochas (Sol Ring, sinetes...) que já foram conjuradas, já que elas
+mudam bastante quanta mana você realmente tem — algo que só contar terrenos
+ignora. "CMV específico" checa se você tem NA MÃO (comprada, não só
+hipotética) e consegue pagar qualquer carta do deck com aquele custo exato,
+útil pra perguntas tipo "no turno 3, tenho uma jogada de 3 mana?" sem
+precisar escolher uma carta nomeada. `classify.ts` extrai quanta mana cada
+carta de rampa produz por ativação (heurística sobre "add ...", editável na
+UI); rampa sempre entra na simulação, mesmo sem meta que a referencie
+diretamente, porque sua mana afeta a chance de bater qualquer meta.
 
 O ponto importante: todas as metas de um plano são avaliadas **juntas, na
 mesma partida simulada** (Monte Carlo), não como probabilidades

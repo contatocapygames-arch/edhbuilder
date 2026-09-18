@@ -173,4 +173,111 @@ describe("runGoalPlanSimulation", () => {
     expect(result.overallProbability).toBe(1);
     expect(result.perMilestone).toEqual([]);
   });
+
+  it("a castCard 'CMV específico' milestone checks for ANY card of that mana value, not a named one", () => {
+    const deckSize = 99;
+    const turn = 4;
+    const milestones: GoalMilestone[] = [
+      { id: "cmc3", kind: "castCard", turn, target: { type: "cmc", cmc: 3, label: "CMV 3" } },
+    ];
+    // 8 cartas distintas de CMV 3 no baralho (tratadas como um "pool" fungível).
+    const result = runGoalPlanSimulation({
+      deckSize,
+      lands: landsOf(37, ["U"]),
+      onPlay: true,
+      milestones,
+      categoryCards: emptyCategories,
+      cmcCards: { 3: [{ requirement: { cmc: 3, pips: {} }, copies: 8 }] },
+      trials: 15000,
+      seed: 6,
+    });
+    // Precisa achar 1 de 8 "CMV 3" na mão/compras E ter 3 terrenos — deve
+    // ser bem menor que só a chance de terrenos (não é garantido achar uma).
+    const landsOnly = hypergeomAtLeast(deckSize, 37, cardsSeenByTurn(turn, true), 3);
+    expect(result.overallProbability).toBeGreaterThan(0);
+    expect(result.overallProbability).toBeLessThan(landsOnly);
+  });
+
+  it("a castCount 'CMV específico' milestone counts repeated casts of any card sharing that CMV", () => {
+    const base = {
+      deckSize: 60,
+      lands: landsOf(24, ["C"]),
+      onPlay: true,
+      categoryCards: emptyCategories,
+      trials: 10000,
+      seed: 7,
+    };
+    const milestones: GoalMilestone[] = [
+      {
+        id: "cmc1x2",
+        kind: "castCount",
+        byTurn: 4,
+        target: { type: "cmc", cmc: 1, label: "CMV 1" },
+        minCount: 2,
+      },
+    ];
+    const fewOptions = runGoalPlanSimulation({
+      ...base,
+      milestones,
+      cmcCards: { 1: [{ requirement: { cmc: 1, pips: {} }, copies: 3 }] },
+    });
+    const manyOptions = runGoalPlanSimulation({
+      ...base,
+      milestones,
+      cmcCards: { 1: [{ requirement: { cmc: 1, pips: {} }, copies: 15 }] },
+    });
+    expect(manyOptions.overallProbability).toBeGreaterThan(fewOptions.overallProbability);
+  });
+
+  it("manaAvailable counts lands only, matching landCount exactly, when there's no ramp", () => {
+    const deckSize = 99;
+    const landCount = 37;
+    const turn = 4;
+    const withoutRamp = {
+      deckSize,
+      lands: landsOf(landCount, ["C"]),
+      onPlay: true,
+      categoryCards: emptyCategories,
+      trials: 15000,
+      seed: 8,
+    };
+    const landResult = runGoalPlanSimulation({
+      ...withoutRamp,
+      milestones: [{ id: "m1", kind: "landCount", turn, minLands: 4 }],
+    });
+    const manaResult = runGoalPlanSimulation({
+      ...withoutRamp,
+      milestones: [{ id: "m1", kind: "manaAvailable", turn, minMana: 4 }],
+    });
+    expect(manaResult.overallProbability).toBeCloseTo(landResult.overallProbability, 2);
+  });
+
+  it("manaAvailable counts mana from ramp already cast (e.g. Sol Ring), unlike landCount", () => {
+    const deckSize = 40;
+    const turn = 2;
+    const base = {
+      deckSize,
+      lands: landsOf(16, ["C"]),
+      onPlay: true,
+      categoryCards: {
+        ...emptyCategories,
+        ramp: [{ requirement: { cmc: 1, pips: {} }, copies: 4, manaProduced: 2 }], // "Sol Ring"
+      },
+      trials: 15000,
+      seed: 9,
+    };
+    // Turno 2 on the play: no máximo 2 terrenos jogados. "4 mana no turno 2"
+    // é impossível só com terrenos, mas possível se um Sol Ring (+2) entrar
+    // em jogo no turno 1.
+    const landResult = runGoalPlanSimulation({
+      ...base,
+      milestones: [{ id: "m1", kind: "landCount", turn, minLands: 4 }],
+    });
+    const manaResult = runGoalPlanSimulation({
+      ...base,
+      milestones: [{ id: "m1", kind: "manaAvailable", turn, minMana: 4 }],
+    });
+    expect(landResult.overallProbability).toBe(0);
+    expect(manaResult.overallProbability).toBeGreaterThan(0);
+  });
 });

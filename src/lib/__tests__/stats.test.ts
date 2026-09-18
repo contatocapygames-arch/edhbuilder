@@ -15,6 +15,7 @@ function card(overrides: Partial<ClassifiedCard> & { name: string; quantity: num
     producesColors: [] as ManaColor[],
     isManaSource: false,
     isRamp: false,
+    manaProduced: 0,
     isTutor: false,
     tutorTargetsAny: false,
     tutorTargetHint: null,

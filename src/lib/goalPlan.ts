@@ -28,15 +28,38 @@ export interface CastRequirement {
   pips: Partial<Record<ManaColor, number>>;
 }
 
+/** Cópias de um alvo conjurável, com quanta mana ele acrescenta ao ser conjurado (rampa/rochas). */
+export interface TargetSpec {
+  requirement: CastRequirement;
+  copies: number;
+  manaProduced?: number;
+}
+
 export type CastTarget =
   | { type: "commander" }
-  | { type: "card"; id: string; label: string; copies: number; requirement: CastRequirement }
-  | { type: "category"; category: "ramp" | "tutor" | "draw" | "removal"; label: string };
+  | {
+      type: "card";
+      id: string;
+      label: string;
+      copies: number;
+      requirement: CastRequirement;
+      manaProduced?: number;
+    }
+  | { type: "category"; category: "ramp" | "tutor" | "draw" | "removal"; label: string }
+  /** "qualquer carta do deck com esse CMV exato" — ignora pips de cor específicos (só checa mana total). */
+  | { type: "cmc"; cmc: number; label: string };
 
 export type GoalMilestone =
   | { id: string; kind: "landCount"; turn: number; minLands: number }
   | { id: string; kind: "colorSources"; turn: number; color: ManaColor; minSources: number }
-  | { id: string; kind: "castCard"; turn: number; target: Extract<CastTarget, { type: "commander" | "card" }> }
+  /** terrenos EM JOGO + mana de rampa/rochas já conjuradas (Sol Ring, sinetes...), não só terrenos. */
+  | { id: string; kind: "manaAvailable"; turn: number; minMana: number }
+  | {
+      id: string;
+      kind: "castCard";
+      turn: number;
+      target: Extract<CastTarget, { type: "commander" | "card" | "cmc" }>;
+    }
   | { id: string; kind: "castCount"; byTurn: number; target: CastTarget; minCount: number };
 
 const COMMANDER_ID = "__commander__";
@@ -50,7 +73,9 @@ export interface GoalPlanConfig {
   /** custo do comandante (obrigatório se alguma meta referenciar target.type === "commander"). */
   commander?: CastRequirement;
   /** cartas do baralho marcadas por categoria (para metas do tipo "conjurar 1 rampa"), com custo. */
-  categoryCards: Record<"ramp" | "tutor" | "draw" | "removal", { requirement: CastRequirement; copies: number }[]>;
+  categoryCards: Record<"ramp" | "tutor" | "draw" | "removal", TargetSpec[]>;
+  /** cartas do baralho agrupadas por CMV exato (para metas do tipo "conjurar algo de CMV 3"). */
+  cmcCards?: Record<number, TargetSpec[]>;
   trials: number;
   startingHandSize?: number;
   seed?: number;
@@ -65,7 +90,12 @@ export interface GoalPlanResult {
 }
 
 type LandToken = { kind: "land"; colors: ManaColor[] };
-type CardToken = { kind: "card"; targetId: string; requirement: CastRequirement };
+type CardToken = {
+  kind: "card";
+  targetId: string;
+  requirement: CastRequirement;
+  manaProduced?: number;
+};
 type OtherToken = { kind: "other" };
 type Token = LandToken | CardToken | OtherToken;
 
@@ -85,19 +115,34 @@ function categoryTargetId(category: string, requirement: CastRequirement): strin
   return `__category_${category}_${requirement.cmc}_${JSON.stringify(requirement.pips)}`;
 }
 
-function buildDeckTargets(
-  config: GoalPlanConfig
-): Map<string, { requirement: CastRequirement; copies: number }> {
-  const targets = new Map<string, { requirement: CastRequirement; copies: number }>();
+function cmcTargetId(cmc: number, requirement: CastRequirement): string {
+  return `__cmc_${cmc}_${requirement.cmc}_${JSON.stringify(requirement.pips)}`;
+}
+
+function buildDeckTargets(config: GoalPlanConfig): Map<string, TargetSpec> {
+  const targets = new Map<string, TargetSpec>();
+  // Rampa sempre entra na simulação, mesmo sem nenhuma meta que a referencie
+  // diretamente: sua mana afeta a chance de bater QUALQUER meta (comandante,
+  // CMV específico, mana disponível...), não só metas do tipo "conjurar rampa".
+  for (const c of config.categoryCards.ramp) {
+    const id = categoryTargetId("ramp", c.requirement);
+    if (!targets.has(id)) targets.set(id, c);
+  }
   for (const m of config.milestones) {
     const t = m.kind === "castCard" || m.kind === "castCount" ? m.target : null;
     if (!t || t.type === "commander") continue;
     if (t.type === "card" && !targets.has(t.id)) {
-      targets.set(t.id, { requirement: t.requirement, copies: t.copies });
+      targets.set(t.id, { requirement: t.requirement, copies: t.copies, manaProduced: t.manaProduced });
     }
     if (t.type === "category") {
       for (const c of config.categoryCards[t.category]) {
         const id = categoryTargetId(t.category, c.requirement);
+        if (!targets.has(id)) targets.set(id, c);
+      }
+    }
+    if (t.type === "cmc") {
+      for (const c of config.cmcCards?.[t.cmc] ?? []) {
+        const id = cmcTargetId(t.cmc, c.requirement);
         if (!targets.has(id)) targets.set(id, c);
       }
     }
@@ -109,14 +154,40 @@ function categoryTargetIds(config: GoalPlanConfig, category: "ramp" | "tutor" | 
   return config.categoryCards[category].map((c) => categoryTargetId(category, c.requirement));
 }
 
-function buildDeck(
+function cmcTargetIds(config: GoalPlanConfig, cmc: number): string[] {
+  return (config.cmcCards?.[cmc] ?? []).map((c) => cmcTargetId(cmc, c.requirement));
+}
+
+/** Soma quantas vezes um alvo (carta específica, comandante, categoria ou CMV) foi conjurado. */
+function totalCastCount(
   config: GoalPlanConfig,
-  targets: Map<string, { requirement: CastRequirement; copies: number }>
-): Token[] {
+  castCount: Map<string, number>,
+  target: CastTarget
+): number {
+  if (target.type === "commander") return castCount.get(COMMANDER_ID) ?? 0;
+  if (target.type === "card") return castCount.get(target.id) ?? 0;
+  if (target.type === "category") {
+    let total = 0;
+    for (const id of categoryTargetIds(config, target.category)) total += castCount.get(id) ?? 0;
+    return total;
+  }
+  let total = 0;
+  for (const id of cmcTargetIds(config, target.cmc)) total += castCount.get(id) ?? 0;
+  return total;
+}
+
+function buildDeck(config: GoalPlanConfig, targets: Map<string, TargetSpec>): Token[] {
   const deck: Token[] = [];
   for (const l of config.lands) deck.push({ kind: "land", colors: l.producesColors });
   for (const [id, spec] of targets) {
-    for (let i = 0; i < spec.copies; i++) deck.push({ kind: "card", targetId: id, requirement: spec.requirement });
+    for (let i = 0; i < spec.copies; i++) {
+      deck.push({
+        kind: "card",
+        targetId: id,
+        requirement: spec.requirement,
+        manaProduced: spec.manaProduced,
+      });
+    }
   }
   const usedSlots = deck.length;
   const otherSlots = config.deckSize - usedSlots;
@@ -131,7 +202,7 @@ function buildDeck(
 
 function runSingleTrial(
   config: GoalPlanConfig,
-  targets: Map<string, { requirement: CastRequirement; copies: number }>,
+  targets: Map<string, TargetSpec>,
   rng: () => number
 ): Map<string, boolean> {
   const deck = buildDeck(config, targets);
@@ -143,6 +214,8 @@ function runSingleTrial(
 
   const sourcesByColor: Record<ManaColor, number> = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
   let landsInPlay = 0;
+  // Mana de rampa/rochas já conjuradas (Sol Ring, sinetes...), persiste entre turnos.
+  let permanentExtraMana = 0;
   const castCount = new Map<string, number>();
   let commanderCast = false;
 
@@ -173,7 +246,7 @@ function runSingleTrial(
       for (const c of land.colors) sourcesByColor[c] = (sourcesByColor[c] ?? 0) + 1;
     }
 
-    let availableMana = landsInPlay;
+    let availableMana = landsInPlay + permanentExtraMana;
 
     // O comandante fica sempre "disponível" na zona de comando — conjura
     // assim que der pra pagar, sem precisar ser comprado.
@@ -204,6 +277,12 @@ function runSingleTrial(
       hand.splice(bestIdx, 1);
       availableMana -= tok.requirement.cmc;
       castCount.set(tok.targetId, (castCount.get(tok.targetId) ?? 0) + 1);
+      // Rampa/rochas conjuradas neste turno já liberam mana no mesmo turno
+      // (paga o resto das ações) e continuam disponíveis nos turnos seguintes.
+      if (tok.manaProduced) {
+        permanentExtraMana += tok.manaProduced;
+        availableMana += tok.manaProduced;
+      }
       progress = true;
     }
 
@@ -213,22 +292,17 @@ function runSingleTrial(
         passed.set(m.id, landsInPlay >= m.minLands);
       } else if (m.kind === "colorSources" && m.turn === turn) {
         passed.set(m.id, (sourcesByColor[m.color] ?? 0) >= m.minSources);
+      } else if (m.kind === "manaAvailable" && m.turn === turn) {
+        passed.set(m.id, landsInPlay + permanentExtraMana >= m.minMana);
       } else if (m.kind === "castCard" && m.turn === turn) {
-        const id = m.target.type === "commander" ? COMMANDER_ID : m.target.id;
-        passed.set(m.id, (castCount.get(id) ?? 0) >= 1);
+        passed.set(m.id, totalCastCount(config, castCount, m.target) >= 1);
       }
     }
   }
 
   for (const m of config.milestones) {
     if (m.kind === "castCount") {
-      let total = 0;
-      if (m.target.type === "commander") total = castCount.get(COMMANDER_ID) ?? 0;
-      else if (m.target.type === "card") total = castCount.get(m.target.id) ?? 0;
-      else if (m.target.type === "category") {
-        for (const id of categoryTargetIds(config, m.target.category)) total += castCount.get(id) ?? 0;
-      }
-      passed.set(m.id, total >= m.minCount);
+      passed.set(m.id, totalCastCount(config, castCount, m.target) >= m.minCount);
     }
   }
 
