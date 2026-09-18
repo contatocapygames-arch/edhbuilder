@@ -192,6 +192,35 @@ describe("runComboSimulation", () => {
     expect(finalWithEngine).toBeGreaterThan(finalWithout);
   });
 
+  it("an engine pays its mana cost only once (casting it) and then draws for free every turn after", () => {
+    // Baralho com só 1 terreno no total: a mana disponível NUNCA passa de 1
+    // pelo resto da partida. Se o motor cobrasse mana de novo a cada gatilho
+    // (bug), ele só poderia disparar 1 vez (a mesma mana usada pra conjurar
+    // ou pro gatilho, nunca as duas coisas). Se cobra só uma vez ao ser
+    // conjurado (correto), ele segue disparando de graça turno após turno,
+    // mesmo sem nenhuma mana extra jamais aparecer.
+    const base = {
+      deckSize: 30,
+      lands: 1,
+      onPlay: true,
+      pieces: [{ id: "p1", copies: 1 }],
+      tutors: [],
+      maxTurn: 15,
+      trials: 10000,
+      seed: 77,
+    };
+    const withoutEngine = runComboSimulation(base);
+    const withEngine = runComboSimulation({
+      ...base,
+      drawSources: [
+        { id: "e1", label: "Rhystic Study", copies: 1, cmc: 1, cardsPerDraw: 3, mode: "engine" as const },
+      ],
+    });
+    // Com o motor pago 1x e disparando de graça em todo turno seguinte, ele
+    // deveria compensar bastante mesmo travado em 1 mana o jogo inteiro.
+    expect(withEngine.completionRate).toBeGreaterThan(withoutEngine.completionRate + 0.1);
+  });
+
   it("shares one mana pool per turn between draw spells and tutors (spending on one leaves less for the other)", () => {
     // Baralho pequeno e mana justa: só dá para conjurar OU o feitiço de
     // compra OU o tutor no mesmo turno, nunca os dois — então adicionar o
