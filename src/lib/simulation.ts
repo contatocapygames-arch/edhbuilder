@@ -174,38 +174,12 @@ function runSingleTrial(
       landsInPlay++;
     }
 
-    // Mana disponível no turno: gasta primeiro em compra (cava mais fundo),
-    // depois no que sobrar em tutores — ordem simples e documentada, não
-    // uma escolha "ótima" carta a carta.
+    // Mana disponível no turno: gasta primeiro em tutor (ação certeira —
+    // busca a peça que falta na hora), e só o que sobrar vai para compra
+    // (cava mais fundo, mas sem garantia de achar a peça). Gastar em compra
+    // primeiro faria a compra "morrer de fome" o tutor turno após turno
+    // sempre que os dois competem pela mesma mana.
     let availableMana = landsInPlay;
-
-    let castingDraw = true;
-    while (castingDraw) {
-      castingDraw = false;
-      let bestIdx = -1;
-      let bestCmc = Infinity;
-      for (let i = 0; i < hand.length; i++) {
-        const t = hand[i];
-        if (t.kind !== "draw") continue;
-        const spec = drawSourceById.get(t.sourceId);
-        if (spec && spec.cmc <= availableMana && spec.cmc < bestCmc) {
-          bestCmc = spec.cmc;
-          bestIdx = i;
-        }
-      }
-      if (bestIdx < 0) break;
-      const tok = hand[bestIdx] as { kind: "draw"; sourceId: string };
-      const spec = drawSourceById.get(tok.sourceId)!;
-      hand.splice(bestIdx, 1);
-      availableMana -= spec.cmc;
-      if (spec.mode === "burst") {
-        drawFromLibrary(spec.cardsPerDraw);
-      } else {
-        activeEngines.add(spec.id);
-      }
-      castingDraw = true;
-    }
-    if (found.size === config.pieces.length) return turn;
 
     let castThisTurn = 0;
     let progress = true;
@@ -237,6 +211,34 @@ function runSingleTrial(
       }
       castThisTurn++;
       progress = true;
+    }
+    if (found.size === config.pieces.length) return turn;
+
+    let castingDraw = true;
+    while (castingDraw) {
+      castingDraw = false;
+      let bestIdx = -1;
+      let bestCmc = Infinity;
+      for (let i = 0; i < hand.length; i++) {
+        const t = hand[i];
+        if (t.kind !== "draw") continue;
+        const spec = drawSourceById.get(t.sourceId);
+        if (spec && spec.cmc <= availableMana && spec.cmc < bestCmc) {
+          bestCmc = spec.cmc;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx < 0) break;
+      const tok = hand[bestIdx] as { kind: "draw"; sourceId: string };
+      const spec = drawSourceById.get(tok.sourceId)!;
+      hand.splice(bestIdx, 1);
+      availableMana -= spec.cmc;
+      if (spec.mode === "burst") {
+        drawFromLibrary(spec.cardsPerDraw);
+      } else {
+        activeEngines.add(spec.id);
+      }
+      castingDraw = true;
     }
 
     if (found.size === config.pieces.length) return turn;

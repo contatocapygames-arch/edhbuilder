@@ -112,9 +112,12 @@ seguinte sem precisar ser conjurada outra vez). `classify.ts` detecta essas
 cartas e pré-preenche quantas cartas cada uma compra e se é provavelmente um
 motor (gatilho de upkeep/passo de compra, ou "sempre que um oponente
 conjura"), mas o usuário pode corrigir. Em cada turno, a mana disponível é
-gasta primeiro em compra (para cavar mais fundo) e só o que sobra vai para
-tutores — uma ordem simples e documentada, não uma escolha "ótima" carta a
-carta. Simplificação assumida: o gatilho de compra sempre resolve (não
+gasta primeiro em tutor (ação certeira — acha a peça que falta na hora) e só
+o que sobra vai para compra (cava mais fundo, mas sem garantia de achar a
+peça) — gastar em compra primeiro faria a compra "morrer de fome" o tutor
+toda vez que os dois competem pela mesma mana. É uma ordem simples e
+documentada, não uma escolha "ótima" carta a carta. Simplificação assumida:
+o gatilho de compra sempre resolve (não
 modela o oponente pagando para negar Rhystic Study/Mystic Remora, nem o
 "put back" de Sylvan Library).
 
