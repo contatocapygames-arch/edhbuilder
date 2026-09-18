@@ -91,3 +91,49 @@ describe("classifyCard draw detection", () => {
     expect(c.isRepeatableDraw).toBe(false);
   });
 });
+
+describe("classifyCard mana production", () => {
+  it("parses Sol Ring as ramp producing 2 mana per activation", () => {
+    const c = classifyCard(
+      card({ name: "Sol Ring", type_line: "Artifact", oracle_text: "{T}: Add {C}{C}." }),
+      1,
+      false
+    );
+    expect(c.isRamp).toBe(true);
+    expect(c.manaProduced).toBe(2);
+  });
+
+  it("parses Arcane Signet as ramp producing 1 mana per activation", () => {
+    const c = classifyCard(
+      card({
+        name: "Arcane Signet",
+        type_line: "Artifact",
+        oracle_text: "{T}: Add one mana of any color in your commander's color identity.",
+        produced_mana: ["W", "U", "B", "R", "G"],
+      }),
+      1,
+      false
+    );
+    expect(c.isRamp).toBe(true);
+    expect(c.manaProduced).toBe(1);
+  });
+
+  it("parses Mana Vault as ramp producing 3 mana per activation", () => {
+    const c = classifyCard(
+      card({ name: "Mana Vault", type_line: "Artifact", oracle_text: "{T}: Add {C}{C}{C}." }),
+      1,
+      false
+    );
+    expect(c.manaProduced).toBe(3);
+  });
+
+  it("does not assign manaProduced to non-ramp cards", () => {
+    const c = classifyCard(
+      card({ name: "Demonic Tutor", oracle_text: "Search your library for a card and put that card into your hand." }),
+      1,
+      false
+    );
+    expect(c.isRamp).toBe(false);
+    expect(c.manaProduced).toBe(0);
+  });
+});

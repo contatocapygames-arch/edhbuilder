@@ -18,6 +18,8 @@ export interface ClassifiedCard {
   producesColors: ManaColor[];
   isManaSource: boolean;
   isRamp: boolean;
+  /** quanta mana uma ativação de rampa/rocha produz (heurística sobre "add ...", editável na UI). */
+  manaProduced: number;
   isTutor: boolean;
   tutorTargetsAny: boolean;
   tutorTargetHint: string | null;
@@ -111,6 +113,27 @@ function parseDrawAmount(oracleText: string): number {
   return DRAW_WORD_TO_NUMBER[token] ?? 1;
 }
 
+const MANA_WORD_TO_NUMBER: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+};
+
+/** Quanta mana a primeira cláusula "add ..." do texto produz (1 se não conseguir identificar). */
+function parseManaProduced(oracleText: string): number {
+  const m = oracleText.match(/add ([^.]*)/i);
+  if (!m) return 1;
+  const clause = m[1];
+  const symbols = clause.match(/\{[^}]+\}/g);
+  if (symbols && symbols.length > 0) return symbols.length;
+  const word = clause.match(/^(one|two|three|four|five|six)\b/i);
+  if (word) return MANA_WORD_TO_NUMBER[word[1].toLowerCase()] ?? 1;
+  return 1;
+}
+
 const REMOVAL_RE =
   /(destroy target|exile target|counter target spell|-\d+\/-\d+.*target|target (creature|permanent|player).*(sacrifice|gets? -)|deals? \d+ damage to target|return target .* to (its owner|hand))/i;
 
@@ -134,6 +157,8 @@ export function classifyCard(
     tutorTargetHint = m ? m[0].trim() : null;
   }
 
+  const isRamp = !isLand && (RAMP_RE.test(oracleText) || isBasicLandTutor);
+
   return {
     name: card.name,
     quantity,
@@ -149,7 +174,8 @@ export function classifyCard(
     isLand,
     producesColors,
     isManaSource,
-    isRamp: !isLand && (RAMP_RE.test(oracleText) || isBasicLandTutor),
+    isRamp,
+    manaProduced: isRamp && isManaSource ? parseManaProduced(oracleText) : 0,
     isTutor: tutorMatch && !isBasicLandTutor,
     tutorTargetsAny,
     tutorTargetHint,
