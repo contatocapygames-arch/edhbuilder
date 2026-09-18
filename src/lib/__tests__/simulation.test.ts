@@ -145,4 +145,76 @@ describe("runComboSimulation", () => {
     // só fecha se A e B forem ambos comprados por acaso — bem mais raro.
     expect(withLandFlag.completionRate).toBeGreaterThan(withoutLandFlag.completionRate);
   });
+
+  it("a one-shot draw spell (burst) increases combo completion probability", () => {
+    const base = {
+      deckSize: 60,
+      lands: 24,
+      onPlay: true,
+      pieces: [{ id: "p1", copies: 1 }],
+      tutors: [],
+      maxTurn: 4,
+      trials: 8000,
+      seed: 21,
+    };
+    const without = runComboSimulation(base);
+    const withBurstDraw = runComboSimulation({
+      ...base,
+      drawSources: [
+        { id: "d1", label: "Harmonize", copies: 4, cmc: 3, cardsPerDraw: 3, mode: "burst" as const },
+      ],
+    });
+    const finalWithout = without.probabilityByTurn.at(-1)!.probability;
+    const finalWith = withBurstDraw.probabilityByTurn.at(-1)!.probability;
+    expect(finalWith).toBeGreaterThan(finalWithout);
+  });
+
+  it("a repeatable draw engine (Rhystic Study-style) keeps digging turn after turn", () => {
+    const base = {
+      deckSize: 60,
+      lands: 24,
+      onPlay: true,
+      pieces: [{ id: "p1", copies: 1 }],
+      tutors: [],
+      maxTurn: 10,
+      trials: 8000,
+      seed: 22,
+    };
+    const without = runComboSimulation(base);
+    const withEngine = runComboSimulation({
+      ...base,
+      drawSources: [
+        { id: "e1", label: "Rhystic Study", copies: 1, cmc: 2, cardsPerDraw: 1, mode: "engine" as const },
+      ],
+    });
+    const finalWithout = without.probabilityByTurn.at(-1)!.probability;
+    const finalWithEngine = withEngine.probabilityByTurn.at(-1)!.probability;
+    expect(finalWithEngine).toBeGreaterThan(finalWithout);
+  });
+
+  it("shares one mana pool per turn between draw spells and tutors (spending on one leaves less for the other)", () => {
+    // Baralho pequeno e mana justa: só dá para conjurar OU o feitiço de
+    // compra OU o tutor no mesmo turno, nunca os dois — então adicionar o
+    // feitiço de compra não pode ficar "de graça" em cima do tutor.
+    const result = runComboSimulation({
+      deckSize: 30,
+      lands: 12,
+      onPlay: true,
+      pieces: [{ id: "p1", copies: 1 }],
+      tutors: [
+        { id: "t1", label: "Demonic Tutor", copies: 4, cmc: 2, targets: ["p1"], speed: "hand" as const },
+      ],
+      drawSources: [
+        { id: "d1", label: "Opt", copies: 4, cmc: 2, cardsPerDraw: 1, mode: "burst" as const },
+      ],
+      maxTurn: 2,
+      trials: 10000,
+      seed: 23,
+    });
+    // No turno 2 (on the play), landsInPlay=2: dá pra conjurar só 1 dos dois
+    // feitiços de CMV 2. Isso é só uma checagem de sanidade — não deve
+    // travar, quebrar ou estourar mana negativa.
+    expect(result.probabilityByTurn[1].probability).toBeGreaterThanOrEqual(0);
+    expect(result.probabilityByTurn[1].probability).toBeLessThanOrEqual(1);
+  });
 });

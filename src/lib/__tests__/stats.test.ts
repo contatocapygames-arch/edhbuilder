@@ -20,6 +20,8 @@ function card(overrides: Partial<ClassifiedCard> & { name: string; quantity: num
     tutorTargetHint: null,
     tutorSpeed: null,
     isDraw: false,
+    drawAmount: 0,
+    isRepeatableDraw: false,
     isRemoval: false,
     pips: { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 },
     ...overrides,
