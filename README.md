@@ -166,6 +166,32 @@ métricas mais gerais:
   resumo — as probabilidades exatas em cada seção continuam sendo a fonte de
   verdade.
 
+### 6. Objetivos do deck / plano de jogo (`src/lib/goalPlan.ts`)
+
+Em vez de estatísticas genéricas, essa seção deixa o usuário descrever o que
+o deck **quer fazer** — ex.: "turno 1, conjurar o Comandante" + "turno 2, ter
+4 terrenos em jogo", ou "até o turno 4, ter conjurado uma carta de rampa pelo
+menos 2 vezes". Cada meta é uma de quatro formas: terrenos em jogo, fontes de
+uma cor, conjurar uma carta/o Comandante num turno, ou conjurar uma
+carta/categoria N vezes até um turno.
+
+O ponto importante: todas as metas de um plano são avaliadas **juntas, na
+mesma partida simulada** (Monte Carlo), não como probabilidades
+independentes multiplicadas — porque a mana gasta numa meta afeta a chance
+de bater a próxima (o próprio exemplo "comandante turno 1 E 4 manas turno 2"
+só faz sentido calculado em conjunto: se sobrar mana do comandante, ela
+ajuda o turno seguinte). O resultado mostra a probabilidade do plano
+completo e a probabilidade marginal de cada meta individual, para achar qual
+delas está travando o plano.
+
+O comandante é tratado como sempre disponível (zona de comando, não precisa
+ser comprado) — a meta "conjurar o Comandante" checa só se há mana e cores
+suficientes, não a chance de tê-lo na mão. Simplificação assumida (a mesma
+já usada na seção de fontes de cor): pagar um custo colorido é aproximado
+por "terrenos em jogo ≥ custo total" E "fontes daquela cor ≥ pips daquela
+cor" checados separadamente, sem resolver que um terreno dual só paga 1 pip
+por vez.
+
 ## Usando o app
 
 1. Cole a lista do deck (formatos `1 Nome`, `1x Nome` ou apenas `Nome` por
@@ -176,9 +202,10 @@ métricas mais gerais:
    analisar.
 3. Depois de analisado: veja a curva de mana, a chance de estar "on curve"
    com terrenos, a chance de ter fontes de cor suficientes por turno/cor
-   (ajustável), e monte os "slots" do seu combo (com redundâncias) e marque
-   quais tutores buscam quais slots para simular a probabilidade de montar o
-   combo por turno.
+   (ajustável), monte os "slots" do seu combo (com redundâncias) e marque
+   quais tutores/cartas de compra buscam/cavam quais slots, e monte um plano
+   de jogo com metas por turno (ex.: comandante no turno 1) na seção
+   "Objetivos do deck".
 
 ## Limitações conhecidas (por design)
 
