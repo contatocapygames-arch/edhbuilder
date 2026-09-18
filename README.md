@@ -188,6 +188,14 @@ carta de rampa produz por ativação (heurística sobre "add ...", editável na
 UI); rampa sempre entra na simulação, mesmo sem meta que a referencie
 diretamente, porque sua mana afeta a chance de bater qualquer meta.
 
+Rampa permanente (artefatos, criaturas — Sol Ring, dorks de mana) e rituais
+(instants/sorceries de um único uso — Dark Ritual, Seething Song) são
+tratados de forma diferente: `classify.ts` marca rituais com `isRitual`, e
+`goalPlan.ts` só soma a mana de um ritual no turno em que ele é conjurado —
+ela some no turno seguinte, ao contrário da mana de rochas/dorks
+permanentes, que continua disponível para sempre depois de entrarem em
+jogo.
+
 O ponto importante: todas as metas de um plano são avaliadas **juntas, na
 mesma partida simulada** (Monte Carlo), não como probabilidades
 independentes multiplicadas — porque a mana gasta numa meta afeta a chance

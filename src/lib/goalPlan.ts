@@ -33,6 +33,12 @@ export interface TargetSpec {
   requirement: CastRequirement;
   copies: number;
   manaProduced?: number;
+  /**
+   * "oneShot" (rituais como Dark Ritual): a mana só conta no turno em que a
+   * carta foi conjurada. "permanent" (padrão, rochas/dorks): continua
+   * disponível nos turnos seguintes.
+   */
+  manaDuration?: "permanent" | "oneShot";
 }
 
 export type CastTarget =
@@ -44,6 +50,7 @@ export type CastTarget =
       copies: number;
       requirement: CastRequirement;
       manaProduced?: number;
+      manaDuration?: "permanent" | "oneShot";
     }
   | { type: "category"; category: "ramp" | "tutor" | "draw" | "removal"; label: string }
   /** "qualquer carta do deck com esse CMV exato" — ignora pips de cor específicos (só checa mana total). */
@@ -95,6 +102,7 @@ type CardToken = {
   targetId: string;
   requirement: CastRequirement;
   manaProduced?: number;
+  manaDuration?: "permanent" | "oneShot";
 };
 type OtherToken = { kind: "other" };
 type Token = LandToken | CardToken | OtherToken;
@@ -132,7 +140,12 @@ function buildDeckTargets(config: GoalPlanConfig): Map<string, TargetSpec> {
     const t = m.kind === "castCard" || m.kind === "castCount" ? m.target : null;
     if (!t || t.type === "commander") continue;
     if (t.type === "card" && !targets.has(t.id)) {
-      targets.set(t.id, { requirement: t.requirement, copies: t.copies, manaProduced: t.manaProduced });
+      targets.set(t.id, {
+        requirement: t.requirement,
+        copies: t.copies,
+        manaProduced: t.manaProduced,
+        manaDuration: t.manaDuration,
+      });
     }
     if (t.type === "category") {
       for (const c of config.categoryCards[t.category]) {
@@ -186,6 +199,7 @@ function buildDeck(config: GoalPlanConfig, targets: Map<string, TargetSpec>): To
         targetId: id,
         requirement: spec.requirement,
         manaProduced: spec.manaProduced,
+        manaDuration: spec.manaDuration,
       });
     }
   }
@@ -247,6 +261,10 @@ function runSingleTrial(
     }
 
     let availableMana = landsInPlay + permanentExtraMana;
+    // Mana de rituais (instant/sorcery) conjurados NESTE turno: conta pra
+    // "mana disponível" agora, mas não vira permanentExtraMana (some no
+    // fim do turno, ao contrário de rochas/dorks).
+    let turnRitualMana = 0;
 
     // O comandante fica sempre "disponível" na zona de comando — conjura
     // assim que der pra pagar, sem precisar ser comprado.
@@ -278,10 +296,17 @@ function runSingleTrial(
       availableMana -= tok.requirement.cmc;
       castCount.set(tok.targetId, (castCount.get(tok.targetId) ?? 0) + 1);
       // Rampa/rochas conjuradas neste turno já liberam mana no mesmo turno
-      // (paga o resto das ações) e continuam disponíveis nos turnos seguintes.
+      // (paga o resto das ações). Rochas/dorks permanentes continuam
+      // disponíveis nos turnos seguintes; rituais (instant/sorcery, ex.
+      // Dark Ritual) são um estouro só deste turno — não entram em
+      // permanentExtraMana.
       if (tok.manaProduced) {
-        permanentExtraMana += tok.manaProduced;
         availableMana += tok.manaProduced;
+        if (tok.manaDuration === "oneShot") {
+          turnRitualMana += tok.manaProduced;
+        } else {
+          permanentExtraMana += tok.manaProduced;
+        }
       }
       progress = true;
     }
@@ -293,7 +318,7 @@ function runSingleTrial(
       } else if (m.kind === "colorSources" && m.turn === turn) {
         passed.set(m.id, (sourcesByColor[m.color] ?? 0) >= m.minSources);
       } else if (m.kind === "manaAvailable" && m.turn === turn) {
-        passed.set(m.id, landsInPlay + permanentExtraMana >= m.minMana);
+        passed.set(m.id, landsInPlay + permanentExtraMana + turnRitualMana >= m.minMana);
       } else if (m.kind === "castCard" && m.turn === turn) {
         passed.set(m.id, totalCastCount(config, castCount, m.target) >= 1);
       }
