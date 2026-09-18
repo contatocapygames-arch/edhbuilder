@@ -28,8 +28,8 @@ export function ComboBuilder({
   landCount: number;
   onPlay: boolean;
 }) {
-  const nonlandCards = useMemo(
-    () => cards.filter((c) => !c.isLand && !c.isCommander).sort((a, b) => a.name.localeCompare(b.name)),
+  const selectableCards = useMemo(
+    () => cards.filter((c) => !c.isCommander).sort((a, b) => a.name.localeCompare(b.name)),
     [cards]
   );
   const tutorCards = useMemo(() => cards.filter((c) => c.isTutor && !c.isCommander), [cards]);
@@ -43,6 +43,7 @@ export function ComboBuilder({
   const [trials, setTrials] = useState(15000);
   const [result, setResult] = useState<SimResult | null>(null);
   const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function getTutorConfig(name: string): TutorConfig {
     return tutorConfigs[name] ?? { enabled: false, mode: "any", groupIds: [] };
@@ -63,14 +64,20 @@ export function ComboBuilder({
 
   function run() {
     setRunning(true);
+    setError(null);
     try {
       const activeGroups = groups.filter((g) => g.cardNames.length > 0);
-      const pieces = activeGroups.map((g) => ({
-        id: g.id,
-        copies: cards
-          .filter((c) => g.cardNames.includes(c.name))
-          .reduce((sum, c) => sum + c.quantity, 0),
-      }));
+      const pieces = activeGroups.map((g) => {
+        const matching = cards.filter((c) => g.cardNames.includes(c.name));
+        return {
+          id: g.id,
+          copies: matching.reduce((sum, c) => sum + c.quantity, 0),
+          // Peça-terreno (ex.: Dark Depths + Thespian's Stage) conta como a
+          // jogada de terreno do turno quando comprada — só quando TODAS as
+          // cartas escolhidas para o slot são terrenos.
+          isLand: matching.length > 0 && matching.every((c) => c.isLand),
+        };
+      });
 
       const tutors = tutorCards
         .filter((t) => getTutorConfig(t.name).enabled)
@@ -86,11 +93,13 @@ export function ComboBuilder({
           };
         });
 
-      const usedInPieces = new Set(pieces.map((p) => p.id));
-      const totalPieceCopies = pieces.reduce((s, p) => s + p.copies, 0);
-      const totalTutorCopies = tutors.reduce((s, t) => s + t.copies, 0);
-      const remainingForLands = librarySize - totalPieceCopies - totalTutorCopies;
-      const effectiveLands = Math.max(0, Math.min(landCount, remainingForLands));
+      // Terrenos que já viraram peça do combo não entram de novo como
+      // "terreno de preenchimento" (senão o baralho contaria a mesma carta
+      // duas vezes).
+      const landPieceCopies = pieces
+        .filter((p) => p.isLand)
+        .reduce((s, p) => s + p.copies, 0);
+      const effectiveLands = Math.max(0, landCount - landPieceCopies);
 
       const res = runComboSimulation({
         deckSize: librarySize,
@@ -102,7 +111,9 @@ export function ComboBuilder({
         trials,
       });
       setResult(res);
-      void usedInPieces;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setResult(null);
     } finally {
       setRunning(false);
     }
@@ -124,10 +135,11 @@ export function ComboBuilder({
       <h2>5. Probabilidade do combo (considerando tutores)</h2>
       <p className="muted">
         Defina os "slots" do seu combo (cada slot pode ter várias cartas redundantes — qualquer
-        uma delas conta) e marque quais tutores podem buscar quais slots. O cálculo usa simulação
-        Monte Carlo (baralho embaralhado, compras turno a turno, terrenos jogados, tutores
-        conjurados quando há mana), porque um tutor "busca qualquer carta" só resolve UM slot em
-        falta por vez — isso não é exatamente capturado por uma fórmula fechada simples.
+        uma delas conta; terrenos também podem ser peça, ex.: Dark Depths + Thespian's Stage) e
+        marque quais tutores podem buscar quais slots. O cálculo usa simulação Monte Carlo
+        (baralho embaralhado, compras turno a turno, terrenos jogados, tutores conjurados quando
+        há mana), porque um tutor "busca qualquer carta" só resolve UM slot em falta por vez —
+        isso não é exatamente capturado por uma fórmula fechada simples.
       </p>
 
       {groups.map((g) => (
@@ -158,9 +170,9 @@ export function ComboBuilder({
               })
             }
           >
-            {nonlandCards.map((c) => (
+            {selectableCards.map((c) => (
               <option key={c.name} value={c.name}>
-                {c.name} ({c.quantity})
+                {c.name} ({c.quantity}){c.isLand ? " — Terreno" : ""}
               </option>
             ))}
           </select>
@@ -255,6 +267,7 @@ export function ComboBuilder({
           {running ? "Simulando..." : "Simular combo"}
         </button>
       </div>
+      {error && <p className="error">{error}</p>}
 
       {result && series && (
         <div style={{ marginTop: 16 }}>

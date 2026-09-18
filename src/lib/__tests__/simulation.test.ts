@@ -110,4 +110,39 @@ describe("runComboSimulation", () => {
     // e o tutor resolvendo simultaneamente mais uma peça vinda da compra.
     expect(result.probabilityByTurn[0].probability).toBeLessThan(1);
   });
+
+  it("counts a land-type piece as that turn's land drop, enabling mana for tutors", () => {
+    // Combo estilo "Dark Depths + Thespian's Stage": a peça "a" é um
+    // terreno. Sem 'isLand', comprá-la nunca viraria mana e o tutor (que
+    // depende de 1 mana) nunca poderia ser conjurado — já que `lands: 0`
+    // significa que a peça-terreno é a ÚNICA fonte de mana do baralho.
+    const base = {
+      deckSize: 60,
+      lands: 0,
+      onPlay: true,
+      pieces: [
+        { id: "a", copies: 1, isLand: true },
+        { id: "b", copies: 1 },
+      ],
+      tutors: [
+        { id: "t", label: "Land Tutor", copies: 4, cmc: 1, targets: ["b"], speed: "hand" as const },
+      ],
+      maxTurn: 8,
+      trials: 8000,
+      seed: 11,
+    };
+
+    const withLandFlag = runComboSimulation(base);
+    const withoutLandFlag = runComboSimulation({
+      ...base,
+      pieces: [
+        { id: "a", copies: 1, isLand: false },
+        { id: "b", copies: 1 },
+      ],
+    });
+
+    // Sem a flag, os 4 tutores ficam mortos na mão (nunca há mana) e o combo
+    // só fecha se A e B forem ambos comprados por acaso — bem mais raro.
+    expect(withLandFlag.completionRate).toBeGreaterThan(withoutLandFlag.completionRate);
+  });
 });
