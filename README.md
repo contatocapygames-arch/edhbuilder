@@ -192,6 +192,24 @@ por "terrenos em jogo ≥ custo total" E "fontes daquela cor ≥ pips daquela
 cor" checados separadamente, sem resolver que um terreno dual só paga 1 pip
 por vez.
 
+### 7. Sugestões de land base (`src/lib/landDatabase.ts`)
+
+Dentro da seção "Consistência de mana", uma lista de terrenos de fixação
+conhecidos (fetch lands, shock lands, pain lands, terrenos de "qualquer
+cor" como Command Tower) filtrada pela identidade de cor do comandante (ou
+pela união das cores do deck, sem comandante) e pelo que o usuário já tem
+na lista. É uma base curada e fixa dos ciclos clássicos mais jogados em
+Commander — não uma busca dinâmica no Scryfall — enriquecida com oracle
+text ao vivo via o mesmo cliente Scryfall usado no resto do app
+(`fetchCardsByName`), best-effort (se a busca falhar, a lista de nomes/cores
+já calculada localmente continua aparecendo normalmente).
+
+Terrenos de ciclo (fetch/shock/pain) só aparecem se **todas** as cores que
+produzem estiverem na identidade — regra de legalidade do Commander, não só
+relevância. Triomes ficam de fora de propósito (entram virados). Terrenos
+que entram virados nos ciclos restantes (ex.: Path of Ancestry) aparecem
+por último, despriorizados, não excluídos.
+
 ## Usando o app
 
 1. Cole a lista do deck (formatos `1 Nome`, `1x Nome` ou apenas `Nome` por
